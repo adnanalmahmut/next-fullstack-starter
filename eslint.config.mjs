@@ -14,6 +14,7 @@ const eslintConfig = defineConfig([
     "test-results/**",
     "blob-report/**",
     "next-env.d.ts",
+    "src/generated/prisma/**",
   ]),
 ]);
 

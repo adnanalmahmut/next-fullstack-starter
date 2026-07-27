@@ -46,3 +46,8 @@ next-env.d.ts
 /blob-report/
 
 !.env.example
+
+src/generated/prisma/
+
+compose.env
+.secrets/
