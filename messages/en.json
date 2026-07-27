@@ -1,0 +1,13 @@
+{
+  "Metadata": {
+    "title": "Next.js Full-stack Starter",
+    "description": "A production-oriented starter for multilingual full-stack Next.js applications."
+  },
+  "Home": {
+    "title": "Next.js Full-stack Starter",
+    "description": "A production-oriented foundation for multilingual Next.js applications.",
+    "languageLabel": "Language",
+    "arabic": "العربية",
+    "english": "English"
+  }
+}
