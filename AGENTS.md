@@ -1,3 +1,7 @@
+# Project Agent Instructions
+
+Before changing code, read and follow [AGENT_RULES.md](./AGENT_RULES.md).
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know
