@@ -39,6 +39,11 @@ export default defineConfig({
   webServer: {
     command: webServerCommand,
     url: baseURL,
+    env: {
+      ...process.env,
+      APP_ENV: "test",
+      NEXT_PUBLIC_APP_URL: baseURL,
+    },
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },

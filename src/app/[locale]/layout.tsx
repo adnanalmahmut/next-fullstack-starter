@@ -4,6 +4,7 @@ import { NextIntlClientProvider, hasLocale } from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
 
+import { publicEnv } from "@/config/env/index.client";
 import { getLocaleDirection } from "@/i18n/config";
 import { routing } from "@/i18n/routing";
 
@@ -45,6 +46,7 @@ export async function generateMetadata({
   });
 
   return {
+    metadataBase: new URL(publicEnv.NEXT_PUBLIC_APP_URL),
     title: t("title"),
     description: t("description"),
   };
