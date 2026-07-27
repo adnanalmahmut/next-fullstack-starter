@@ -1,36 +1,75 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Next Full-Stack Starter
+
+A production-oriented Next.js starter with TypeScript, internationalized routing, automated testing, and validated environment configuration.
+
+## Requirements
+
+- Node.js 24.13.x
+- pnpm 10.29.x
+
+Use the versions declared in `.nvmrc`, `package.json`, and the `packageManager` field.
 
 ## Getting Started
 
-First, run the development server:
+Install dependencies:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Create the local environment file:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+cp .env.example .env.local
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Start the development server:
 
-## Learn More
+```bash
+pnpm dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+Open [http://localhost:3000](http://localhost:3000).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Verification
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Run the main quality gate:
 
-## Deploy on Vercel
+```bash
+pnpm verify
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Run browser tests:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+pnpm test:e2e
+```
+
+The `Verify` CI job runs formatting checks, ESLint, TypeScript checks, test coverage, the production build, and Playwright tests.
+
+## Environment Configuration
+
+Environment variables are validated with Zod.
+
+- Server variables are exposed through `src/config/env/index.server.ts`.
+- Public variables are exposed through `src/config/env/index.client.ts`.
+- Server configuration is validated when `next.config.ts` is loaded.
+- Public variables must use the `NEXT_PUBLIC_` prefix.
+- `.env.local` must not be committed.
+- `.env.example` documents required configuration.
+
+See [`src/config/README.md`](src/config/README.md) for the complete configuration contract.
+
+## Application Structure
+
+```text
+messages/              Translation messages
+src/app/               Next.js App Router
+src/config/            Validated application configuration
+src/i18n/              Internationalization infrastructure
+src/modules/           Business modules
+src/platform/          Infrastructure adapters
+src/shared/            Shared application code
+src/ui/                Reusable UI components
+tests/                 Integration, contract, and end-to-end tests
+```
