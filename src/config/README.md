@@ -2,22 +2,135 @@
 
 Application configuration is validated with Zod before it is consumed.
 
+## Configuration Files
+
+| File                  | Version control | Purpose                                      |
+| --------------------- | --------------- | -------------------------------------------- |
+| `.env.example`        | Committed       | Documents application environment variables. |
+| `.env.local`          | Ignored         | Local development application configuration. |
+| `.env.test.local`     | Ignored         | Local test application configuration.        |
+| `compose.env.example` | Committed       | Documents Docker Compose configuration.      |
+| `compose.env`         | Ignored         | Local Docker Compose configuration.          |
+| `.secrets/`           | Ignored         | Local Docker Compose secret files.           |
+
 ## Local Setup
 
-Create the ignored local environment file from the committed example:
+Create the local Compose configuration:
 
 ```bash
-cp .env.example .env.local
+cp compose.env.example compose.env
 ```
 
-`next.config.ts` validates the server environment before Next.js enters its build or server phase. Application code accesses the validated values through the server-only entry point.
+Create database passwords:
+
+```bash
+mkdir -p .secrets
+
+python3 - <<'PY'
+from pathlib import Path
+from secrets import token_hex
+
+directory = Path(".secrets")
+directory.mkdir(exist_ok=True)
+
+for name in ("postgres_password", "postgres_test_password"):
+    path = directory / name
+
+    if not path.exists():
+        path.write_text(token_hex(24) + "\n")
+PY
+
+chmod 700 .secrets
+chmod 600 .secrets/postgres_password
+chmod 600 .secrets/postgres_test_password
+```
+
+Create application environment files from the Compose configuration and secret files:
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+from urllib.parse import quote
+
+def read_env(path: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+
+    for line in Path(path).read_text().splitlines():
+        line = line.strip()
+
+        if not line or line.startswith("#"):
+            continue
+
+        key, value = line.split("=", 1)
+        values[key] = value
+
+    return values
+
+compose = read_env("compose.env")
+
+development_password = (
+    Path(compose["POSTGRES_PASSWORD_FILE"]).read_text().strip()
+)
+test_password = (
+    Path(compose["POSTGRES_TEST_PASSWORD_FILE"]).read_text().strip()
+)
+
+development_url = (
+    "postgresql://"
+    f"{quote(compose['POSTGRES_USER'], safe='')}:"
+    f"{quote(development_password, safe='')}@"
+    f"127.0.0.1:{compose['POSTGRES_PORT']}/"
+    f"{quote(compose['POSTGRES_DB'], safe='')}"
+    "?schema=public"
+)
+
+test_url = (
+    "postgresql://"
+    f"{quote(compose['POSTGRES_TEST_USER'], safe='')}:"
+    f"{quote(test_password, safe='')}@"
+    f"127.0.0.1:{compose['POSTGRES_TEST_PORT']}/"
+    f"{quote(compose['POSTGRES_TEST_DB'], safe='')}"
+    "?schema=public"
+)
+
+Path(".env.local").write_text(
+    "\n".join(
+        [
+            "APP_ENV=development",
+            f"DATABASE_URL={development_url}",
+            "NEXT_PUBLIC_APP_URL=http://localhost:3000",
+            "",
+        ]
+    )
+)
+
+Path(".env.test.local").write_text(
+    "\n".join(
+        [
+            "APP_ENV=test",
+            f"DATABASE_URL={test_url}",
+            "NEXT_PUBLIC_APP_URL=http://127.0.0.1:3100",
+            "",
+        ]
+    )
+)
+PY
+```
+
+Start the databases:
+
+```bash
+pnpm db:up
+pnpm db:test:up
+```
 
 ## Environment Variables
 
 | Variable              | Visibility | Required           | Purpose                                               |
 | --------------------- | ---------- | ------------------ | ----------------------------------------------------- |
 | `APP_ENV`             | Server     | Yes                | Identifies the application deployment environment.    |
-| `NODE_ENV`            | Server     | Managed by Next.js | Identifies the Node.js execution mode.                |
+| `DATABASE_URL`        | Server     | Yes                | Provides the PostgreSQL connection URL.               |
+| `NODE_ENV`            | Server     | Managed by runtime | Identifies the Node.js execution mode.                |
 | `NEXT_PUBLIC_APP_URL` | Public     | Yes                | Provides the canonical HTTP or HTTPS application URL. |
 
 ### Supported `APP_ENV` Values
@@ -33,12 +146,24 @@ cp .env.example .env.local
 - `test`
 - `production`
 
+`DATABASE_URL` must use the `postgresql://` or `postgres://` protocol.
+
+## Environment Loading
+
+Next.js loads application environment files according to its environment loading rules.
+
+During tests, `NODE_ENV` is `test`. The integration test therefore uses `.env.test.local`, not `.env.local`.
+
+`prisma.config.ts` calls `loadEnvConfig` from `@next/env` before validating `DATABASE_URL`. This keeps Prisma CLI commands aligned with the application's environment loading behavior.
+
+Explicit process environment variables take precedence over local environment files. CI provides its test configuration directly through the workflow environment.
+
 ## Import Boundaries
 
-Import server configuration from:
+Import server and database configuration from:
 
 ```ts
-import { serverEnv } from "@/config/env/index.server";
+import { databaseEnv, serverEnv } from "@/config/env/index.server";
 ```
 
 Import public configuration from:
@@ -47,19 +172,35 @@ Import public configuration from:
 import { publicEnv } from "@/config/env/index.client";
 ```
 
-Application modules must not access `process.env` directly. New variables must be declared in the appropriate schema and exposed through the corresponding entry point.
+Application modules must not access `process.env` directly. New variables must be declared in the appropriate schema and exposed through a controlled entry point.
 
-`index.server.ts` imports `server-only`, preventing server configuration from being imported into Client Components.
+`index.server.ts` imports `server-only`, preventing server configuration and database credentials from being imported into Client Components.
 
 Only non-secret values may use the `NEXT_PUBLIC_` prefix.
 
+## Docker Compose Secrets
+
+The Compose services receive database passwords through:
+
+```text
+/run/secrets/postgres_password
+/run/secrets/postgres_test_password
+```
+
+The passwords are not passed through `POSTGRES_PASSWORD`.
+
+Docker Compose Secrets protect the password from container environment inspection, but local secret files remain plaintext on the host. They must remain ignored by Git and use restrictive filesystem permissions.
+
+Production deployments should use the target platform's managed secret store rather than copying the local `.secrets/` directory.
+
 ## Adding a Server Variable
 
-1. Add the variable to `serverEnvironmentSchema`.
-2. Add its explicit `process.env` lookup to `index.server.ts`.
-3. Add it to `.env.example`.
-4. Add valid and invalid schema tests.
-5. Configure it in CI and deployment environments.
+1. Add the variable to the appropriate Zod schema.
+2. Add its explicit `process.env` lookup to the corresponding reader.
+3. Expose it through `index.server.ts` when application code needs it.
+4. Add it to `.env.example`.
+5. Add valid and invalid schema tests.
+6. Configure it in CI and deployment environments.
 
 ## Adding a Public Variable
 

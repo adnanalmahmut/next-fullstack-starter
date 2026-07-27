@@ -1,3 +1,7 @@
-ignoredBuiltDependencies:
-  - sharp
-  - unrs-resolver
+allowBuilds:
+  "@parcel/watcher": false
+  "@prisma/engines": false
+  "@swc/core": false
+  prisma: false
+  sharp: false
+  unrs-resolver: false

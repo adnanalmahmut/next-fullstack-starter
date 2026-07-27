@@ -7,6 +7,16 @@ export const appEnvironmentSchema = z.enum([
   "production",
 ]);
 
+export const databaseUrlSchema = z.url({
+  protocol: /^postgres(?:ql)?$/,
+});
+
+export const databaseEnvironmentSchema = z
+  .object({
+    DATABASE_URL: databaseUrlSchema,
+  })
+  .strict();
+
 export const serverEnvironmentSchema = z
   .object({
     APP_ENV: appEnvironmentSchema,
@@ -22,5 +32,6 @@ export const publicEnvironmentSchema = z
   })
   .strict();
 
+export type DatabaseEnvironment = z.output<typeof databaseEnvironmentSchema>;
 export type ServerEnvironment = z.output<typeof serverEnvironmentSchema>;
 export type PublicEnvironment = z.output<typeof publicEnvironmentSchema>;
