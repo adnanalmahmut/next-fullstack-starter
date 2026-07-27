@@ -48,6 +48,10 @@ export default defineConfig({
 
       exclude: [
         "src/app/**",
+        "src/proxy.ts",
+        "src/i18n/navigation.ts",
+        "src/i18n/request.ts",
+        "src/i18n/routing.ts",
         "src/**/*.d.ts",
         "src/**/*.{test,spec}.{ts,tsx}",
         "src/**/index.client.ts",

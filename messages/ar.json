@@ -1,0 +1,13 @@
+{
+  "Metadata": {
+    "title": "قالب Next.js متكامل",
+    "description": "قالب إنتاجي لبناء تطبيقات Next.js متكاملة ومتعددة اللغات."
+  },
+  "Home": {
+    "title": "قالب Next.js متكامل",
+    "description": "أساس إنتاجي لتطبيقات Next.js متعددة اللغات.",
+    "languageLabel": "اللغة",
+    "arabic": "العربية",
+    "english": "English"
+  }
+}
