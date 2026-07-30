@@ -7,6 +7,7 @@ System-level architectural documentation lives here.
 - [Layer and Module Boundaries](./layer-boundaries.md)
 - [Module Map](./module-map.md)
 - [Error Handling Contracts](./error-handling.md)
+- [Observability Foundation](./observability.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)
 
@@ -25,6 +26,7 @@ Current documentation covers:
 - Automated architecture enforcement.
 - Module ownership and public entry points.
 - Typed internal errors and safe transport contracts.
+- Request correlation, request-scoped context, and structured logging.
 
 Future documentation may cover:
 
@@ -34,7 +36,6 @@ Future documentation may cover:
 - Internationalization.
 - Caching.
 - Background jobs.
-- Observability.
 - Deployment architecture.
 
 Documentation must describe implemented architecture. Do not document

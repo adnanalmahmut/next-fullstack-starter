@@ -77,6 +77,14 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    name: "quality/no-production-console",
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/**/*.{test,spec}.{ts,tsx}"],
+    rules: {
+      "no-console": "error",
+    },
+  },
+  {
     name: "architecture/domain",
     files: ["src/modules/*/domain/**/*.{ts,tsx}"],
     rules: {
