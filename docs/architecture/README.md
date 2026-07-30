@@ -6,6 +6,7 @@ System-level architectural documentation lives here.
 
 - [Layer and Module Boundaries](./layer-boundaries.md)
 - [Module Map](./module-map.md)
+- [Error Handling Contracts](./error-handling.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)
 
@@ -23,6 +24,7 @@ Current documentation covers:
 - Client-safe and server-only boundaries.
 - Automated architecture enforcement.
 - Module ownership and public entry points.
+- Typed internal errors and safe transport contracts.
 
 Future documentation may cover:
 
