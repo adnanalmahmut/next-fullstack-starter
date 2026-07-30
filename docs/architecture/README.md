@@ -2,4 +2,38 @@
 
 System-level architectural documentation lives here.
 
-This area will document system context, module boundaries, data ownership, authentication, authorization, internationalization, caching, jobs, and testing.
+## Documents
+
+- [Layer and Module Boundaries](./layer-boundaries.md)
+- [Module Map](./module-map.md)
+- [Module Development Guide](../../src/modules/README.md)
+- [Repository Rules](../../AGENT_RULES.md)
+
+## Scope
+
+This directory records architectural decisions and constraints that apply
+across the repository.
+
+Current documentation covers:
+
+- Source-code areas.
+- Business module structure.
+- Layer responsibilities.
+- Cross-module dependency boundaries.
+- Client-safe and server-only boundaries.
+- Automated architecture enforcement.
+- Module ownership and public entry points.
+
+Future documentation may cover:
+
+- System context.
+- Authentication and authorization.
+- Data ownership.
+- Internationalization.
+- Caching.
+- Background jobs.
+- Observability.
+- Deployment architecture.
+
+Documentation must describe implemented architecture. Do not document
+speculative modules, services, or infrastructure as though they already exist.
