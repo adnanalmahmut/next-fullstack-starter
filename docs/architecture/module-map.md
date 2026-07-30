@@ -89,6 +89,27 @@ Responsibilities:
 The detailed contracts and dependency direction are defined in
 [`error-handling.md`](./error-handling.md).
 
+### Observability
+
+```text
+src/platform/observability/index.server.ts
+src/instrumentation.ts
+src/proxy.ts
+```
+
+Responsibilities:
+
+- Expose the controlled server-only structured logging and request-context API.
+- Validate, generate, propagate, and return `x-request-id` values.
+- Isolate request context with `AsyncLocalStorage`.
+- Emit Pino JSON with stable fields, event names, and redaction.
+- Delegate safe Next.js request-error reporting without exposing raw errors.
+
+The proxy integration remains limited to paths already covered by its locale
+matcher. Future Action, Route Handler, webhook, cron, and job boundaries must
+initialize or propagate their own context. The detailed policy is defined in
+[`observability.md`](./observability.md).
+
 ## Required module template
 
 A new module starts with the minimum structure required by its feature:
@@ -202,5 +223,6 @@ pnpm verify
 
 - [Layer and Module Boundaries](./layer-boundaries.md)
 - [Error Handling Contracts](./error-handling.md)
+- [Observability Foundation](./observability.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)

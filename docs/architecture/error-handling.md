@@ -57,8 +57,9 @@ from `unknown` to `PublicError`.
   provider-shaped properties.
 - The input is never cast, spread, or serialized into the result.
 
-Logging is intentionally not part of normalization. A later observability
-boundary may record internal diagnostics without changing the public contract.
+Logging is intentionally not part of normalization. The separate
+[observability boundary](./observability.md) records only a safe error
+classification without changing the public contract.
 
 ## Action result contract
 
@@ -168,6 +169,8 @@ The following remain intentionally outside this contract:
 
 - Server Action and Route Handler factories.
 - Authentication, authorization policies, and business modules.
-- Structured logging, request context, tracing, and monitoring.
-- Request IDs, field-error schemas, pagination, metadata, and OpenAPI.
+- Automatic request-context initialization in future Action and Route Handler
+  factories.
+- Tracing, metrics, monitoring providers, and remote log shipping.
+- Field-error schemas, pagination, metadata, and OpenAPI.
 - UI components and translated user-facing messages.
