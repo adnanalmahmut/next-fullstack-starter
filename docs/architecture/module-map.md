@@ -70,6 +70,25 @@ Responsibilities:
 - Exposes the shared Prisma database instance.
 - Prevents callers from depending on the internal client implementation.
 
+### Error primitives and transport contracts
+
+```text
+src/shared/errors
+src/platform/errors
+src/platform/actions
+src/platform/http
+```
+
+Responsibilities:
+
+- Keep application error identity and stable error codes framework-independent.
+- Normalize unknown failures into a minimal public error.
+- Define client-safe Action result and HTTP response shapes.
+- Map every public error code to an HTTP status exhaustively.
+
+The detailed contracts and dependency direction are defined in
+[`error-handling.md`](./error-handling.md).
+
 ## Required module template
 
 A new module starts with the minimum structure required by its feature:
@@ -182,5 +201,6 @@ pnpm verify
 ## Related documentation
 
 - [Layer and Module Boundaries](./layer-boundaries.md)
+- [Error Handling Contracts](./error-handling.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)
