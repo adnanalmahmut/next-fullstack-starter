@@ -4,6 +4,7 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
 
 import { serverEnv } from "@/config/env/index.server";
+import { getLocaleDirection } from "@/i18n/config";
 import { routing } from "@/i18n/routing";
 import { PageContainer } from "@/ui/layout/page-container";
 
@@ -47,14 +48,14 @@ export default async function DesignSystemPage({
       <PageContainer>
         <header className="mb-10 flex max-w-3xl flex-col gap-3">
           <p className="text-label font-medium text-primary">{t("eyebrow")}</p>
-          <h1 className="text-heading-xl font-semibold tracking-tight">
+          <h1 className="text-heading-xl font-bold tracking-tight">
             {t("title")}
           </h1>
           <p className="text-body-lg text-muted-foreground">
             {t("description")}
           </p>
         </header>
-        <DesignSystemShowcase />
+        <DesignSystemShowcase direction={getLocaleDirection(locale)} />
       </PageContainer>
     </main>
   );

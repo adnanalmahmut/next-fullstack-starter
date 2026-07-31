@@ -273,19 +273,28 @@ describe("observability contracts", () => {
     );
   });
 
-  it("enforces the production console restriction", async () => {
-    const eslint = new ESLint({ cwd: projectRoot });
-    const [result] = await eslint.lintText('console.log("not allowed");', {
-      filePath: "src/platform/observability/console-fixture.ts",
-    });
+  // A fresh ESLint instance resolves the flat config and builds the type-aware
+  // program before it can lint a single line, which exceeds the default
+  // per-test budget.
+  const eslintLintTimeout = 20_000;
 
-    expect(result?.messages).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          ruleId: "no-console",
-          severity: 2,
-        }),
-      ]),
-    );
-  });
+  it(
+    "enforces the production console restriction",
+    async () => {
+      const eslint = new ESLint({ cwd: projectRoot });
+      const [result] = await eslint.lintText('console.log("not allowed");', {
+        filePath: "src/platform/observability/console-fixture.ts",
+      });
+
+      expect(result?.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            ruleId: "no-console",
+            severity: 2,
+          }),
+        ]),
+      );
+    },
+    eslintLintTimeout,
+  );
 });

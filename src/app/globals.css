@@ -33,9 +33,10 @@
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
 
-  --font-sans: var(--font-application-sans);
+  --font-sans: var(--font-thmanyah-sans);
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-application-sans);
+  --font-heading: var(--font-thmanyah-sans);
+  --font-display: var(--font-thmanyah-serif-display);
 
   --text-heading-xl: 2.25rem;
   --text-heading-xl--line-height: 1.15;
@@ -168,12 +169,8 @@
   }
 
   html {
-    --font-application-sans: var(--font-geist-sans);
     @apply font-sans;
-  }
-
-  html[dir="rtl"] {
-    --font-application-sans: var(--font-noto-sans-arabic);
+    font-synthesis: none;
   }
 
   body {

@@ -29,6 +29,8 @@
       "heading": "تسلسل بصري واضح متعدد اللغات",
       "body": "يبقى النص الأساسي مريحًا للقراءة بالعربية والإنجليزية.",
       "label": "تسمية واجهة مدمجة",
+      "displayBold": "تأكيد تحريري بارز",
+      "displayBlack": "عبارة عرض مميزة",
       "code": "request_01JXYZ"
     },
     "controls": {
@@ -100,6 +102,8 @@
       "menuLabel": "الإجراءات",
       "menuFirst": "عرض التفاصيل",
       "menuSecond": "تكرار",
+      "menuMore": "نقل إلى",
+      "menuNested": "المشاريع المؤرشفة",
       "menuDestructive": "إزالة",
       "showToast": "إظهار إشعار",
       "toastMessage": "إشعار يقدمه المستدعي",

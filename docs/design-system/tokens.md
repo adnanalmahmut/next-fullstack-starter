@@ -17,13 +17,21 @@ uses a local `.dark` surface to verify both sets without changing global state.
 
 ## Typography
 
-Geist is the LTR application family, Noto Sans Arabic is the RTL application
-family, and Geist Mono remains direction-independent. The locale layout loads
-all three through `next/font`; CSS chooses the application family from the
-document `dir`. Heading, body, label, and caption scales define size and line
-height together. Interface weights are restrained to regular, medium, and
-semibold, with tracking adjustments reserved for headings and deliberate
-labels.
+Typography is defined once in `src/app/fonts.ts` and exposed through CSS
+variables. Thmanyah Sans is the self-hosted application and heading family for
+both Arabic and Latin text. Its regular (400), medium (500), and bold (700)
+files are preloaded because every locale uses them. Thmanyah Serif Display is a
+self-hosted display family with bold (700) and black (900) files; it is not
+globally preloaded because it is reserved for deliberate display text. Geist
+Mono remains the direction-independent code family.
+
+The repository intentionally excludes the unused Thmanyah Sans light and black
+files and the unused Thmanyah Serif Display light, regular, and medium files.
+Components use regular for body copy, medium for labels and controls, and bold
+for headings. `font-black` is valid only together with `font-display`.
+Synthetic weights and styles are disabled globally. Heading, body, label, and
+caption scales define size and line height together; tracking adjustments are
+reserved for headings and deliberate labels.
 
 ## Geometry and layout
 

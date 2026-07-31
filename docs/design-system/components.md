@@ -25,9 +25,22 @@ logic, route behavior, and server-only imports are prohibited. Do not create an
 
 Loading actions compose `Button`, `Spinner`, and `disabled`; Button has no
 custom pending prop. Button icons use `data-icon` and inherit size from the
-primitive. Select items belong to a `SelectGroup`. Dialog content always
-receives a caller-provided accessible title, and a close label is supplied when
-the close control is shown. Destructive decisions use AlertDialog.
+primitive. Select items belong to a `SelectGroup`. Every `DropdownMenuItem`
+belongs to a `DropdownMenuGroup`, and a destructive item stays in its own group
+behind a separator. Dialog content always receives a caller-provided accessible
+title, and a close label is supplied when the close control is shown.
+Destructive decisions use AlertDialog.
+
+`Select` and `DropdownMenu` require an explicit `dir` on the root because Radix
+resolves direction to `ltr` when none is supplied and stamps that value onto its
+trigger and portalled content. Callers pass a `direction` value derived from the
+locale at the server boundary; the primitives themselves stay locale-agnostic.
+See [`rtl-ltr.md`](./rtl-ltr.md) for the full contract.
+
+Typography comes from the tokens rather than per-component families: regular
+(400) for body text, descriptions, input values, and menu items; medium (500)
+for buttons, labels, controls, and badges; bold (700) for headings. `font-black`
+is valid only together with `font-display`.
 
 One `Toaster` is mounted in the locale layout. Callers own every toast message.
 No Theme Provider is required.

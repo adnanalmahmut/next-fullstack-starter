@@ -2,6 +2,7 @@ import { hasLocale } from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
 
+import { getLocaleDirection } from "@/i18n/config";
 import { routing } from "@/i18n/routing";
 import { PageContainer } from "@/ui/layout/page-container";
 import {
@@ -44,7 +45,7 @@ export default async function HomePage({ params }: HomePageProps) {
             </p>
 
             <CardTitle>
-              <h1 className="text-heading-xl font-semibold tracking-tight">
+              <h1 className="text-heading-xl font-bold tracking-tight">
                 {t("title")}
               </h1>
             </CardTitle>
@@ -53,7 +54,7 @@ export default async function HomePage({ params }: HomePageProps) {
             </CardDescription>
           </CardHeader>
           <CardContent className="px-8 pb-4 sm:px-12 sm:pb-8">
-            <LanguageSwitcher />
+            <LanguageSwitcher direction={getLocaleDirection(locale)} />
           </CardContent>
         </Card>
       </PageContainer>

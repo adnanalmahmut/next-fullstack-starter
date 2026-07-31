@@ -5,6 +5,11 @@ the application. It owns semantic tokens, reviewed shadcn/ui source, reusable
 interface states, and layout primitives. It does not own business rules,
 translation policy, route behavior, or server infrastructure.
 
+Application typography is centralized in `src/app/fonts.ts`. Local Thmanyah
+Sans and Thmanyah Serif Display files are loaded through `next/font/local`;
+Geist Mono is retained for direction-independent identifiers and code. See the
+token policy for the supported weights and preload rationale.
+
 ## Structure
 
 ```text

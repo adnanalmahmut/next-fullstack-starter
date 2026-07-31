@@ -45,6 +45,9 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/ui/primitives/dropdown-menu";
 import {
@@ -100,9 +103,7 @@ function ShowcaseSection({
   return (
     <section className="flex flex-col gap-6 border-t py-10 first:border-t-0 first:pt-0">
       <div className="max-w-2xl">
-        <h2 className="text-heading-md font-semibold tracking-tight">
-          {title}
-        </h2>
+        <h2 className="text-heading-md font-bold tracking-tight">{title}</h2>
         <p className="mt-1 text-body text-muted-foreground">{description}</p>
       </div>
       {children}
@@ -110,7 +111,7 @@ function ShowcaseSection({
   );
 }
 
-function DesignSystemShowcase() {
+function DesignSystemShowcase({ direction }: { direction: "rtl" | "ltr" }) {
   const locale = useLocale();
   const t = useTranslations("DesignSystem");
   const [pending, setPending] = useState(false);
@@ -134,25 +135,39 @@ function DesignSystemShowcase() {
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-raised">
-            <h3 className="text-heading-lg font-semibold">
-              {t("tokens.light")}
-            </h3>
+            <h3 className="text-heading-lg font-bold">{t("tokens.light")}</h3>
             <p className="mt-2 text-muted-foreground">{t("tokens.surface")}</p>
           </div>
           <div className="dark rounded-xl border bg-card p-6 text-card-foreground shadow-raised">
-            <h3 className="text-heading-lg font-semibold">
-              {t("tokens.dark")}
-            </h3>
+            <h3 className="text-heading-lg font-bold">{t("tokens.dark")}</h3>
             <p className="mt-2 text-muted-foreground">{t("tokens.surface")}</p>
           </div>
         </div>
         <div className="grid gap-3 rounded-xl border bg-surface-elevated p-6 shadow-subtle">
-          <p className="text-heading-xl font-semibold">
+          <p className="text-heading-xl font-bold" data-typography="heading">
             {t("typography.heading")}
           </p>
-          <p className="text-body-lg">{t("typography.body")}</p>
-          <p className="text-label font-medium">{t("typography.label")}</p>
-          <code className="text-caption">{t("typography.code")}</code>
+          <p className="text-body-lg font-normal" data-typography="body">
+            {t("typography.body")}
+          </p>
+          <p className="text-label font-medium" data-typography="label">
+            {t("typography.label")}
+          </p>
+          <p
+            className="font-display text-heading-lg font-bold"
+            data-typography="display-bold"
+          >
+            {t("typography.displayBold")}
+          </p>
+          <p
+            className="font-display text-heading-xl font-black"
+            data-typography="display-black"
+          >
+            {t("typography.displayBlack")}
+          </p>
+          <code className="font-mono text-caption" data-typography="mono">
+            {t("typography.code")}
+          </code>
         </div>
       </ShowcaseSection>
 
@@ -240,7 +255,7 @@ function DesignSystemShowcase() {
             <FieldLabel htmlFor="showcase-select">
               {t("forms.select")}
             </FieldLabel>
-            <Select>
+            <Select dir={direction}>
               <SelectTrigger id="showcase-select" className="w-full">
                 <SelectValue placeholder={t("forms.selectPlaceholder")} />
               </SelectTrigger>
@@ -335,11 +350,11 @@ function DesignSystemShowcase() {
             </DialogContent>
           </Dialog>
 
-          <DropdownMenu>
+          <DropdownMenu dir={direction}>
             <DropdownMenuTrigger asChild>
               <Button variant="outline">
-                <MoreHorizontalIcon data-icon="inline-start" />
                 {t("overlays.openMenu")}
+                <MoreHorizontalIcon data-icon="inline-end" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
@@ -347,6 +362,18 @@ function DesignSystemShowcase() {
                 <DropdownMenuLabel>{t("overlays.menuLabel")}</DropdownMenuLabel>
                 <DropdownMenuItem>{t("overlays.menuFirst")}</DropdownMenuItem>
                 <DropdownMenuItem>{t("overlays.menuSecond")}</DropdownMenuItem>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    {t("overlays.menuMore")}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuGroup>
+                      <DropdownMenuItem>
+                        {t("overlays.menuNested")}
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>

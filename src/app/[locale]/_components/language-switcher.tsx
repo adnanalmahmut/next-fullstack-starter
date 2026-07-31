@@ -20,7 +20,7 @@ const localeLabelKeys = {
   en: "english",
 } as const;
 
-export function LanguageSwitcher() {
+export function LanguageSwitcher({ direction }: { direction: "rtl" | "ltr" }) {
   const locale = useLocale();
   const t = useTranslations("Home");
   const pathname = usePathname();
@@ -46,6 +46,7 @@ export function LanguageSwitcher() {
       <FieldLabel htmlFor="locale-select">{t("languageLabel")}</FieldLabel>
       <Select
         name="locale"
+        dir={direction}
         value={locale}
         disabled={isPending}
         onValueChange={(value) => handleLocaleChange(value as AppLocale)}

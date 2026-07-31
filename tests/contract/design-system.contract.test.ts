@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { isDesignSystemShowcaseEnabled } from "@/app/[locale]/(development)/design-system/showcase-access";
 
 const projectRoot = process.cwd();
+const appRoot = resolve(projectRoot, "src/app");
 const uiRoot = resolve(projectRoot, "src/ui");
 
 const requiredColorTokens = [
@@ -98,6 +99,115 @@ function translationKeys(value: unknown, prefix = ""): string[] {
 }
 
 describe("design system contracts", () => {
+  it("centralizes the exact local font files, weights, and loading policy", () => {
+    const fonts = readProjectFile("src/app/fonts.ts");
+    const fontFiles = readdirSync(resolve(appRoot, "fonts")).sort();
+    const sans =
+      fonts.match(/const thmanyahSans = localFont\(\{[\s\S]*?\n\}\);/)?.[0] ??
+      "";
+    const serif =
+      fonts.match(
+        /const thmanyahSerifDisplay = localFont\(\{[\s\S]*?\n\}\);/,
+      )?.[0] ?? "";
+    const mono =
+      fonts.match(/const geistMono = Geist_Mono\(\{[\s\S]*?\n\}\);/)?.[0] ?? "";
+
+    expect(fontFiles).toEqual([
+      "thmanyah-sans-bold.woff2",
+      "thmanyah-sans-medium.woff2",
+      "thmanyah-sans-regular.woff2",
+      "thmanyah-serif-display-black.woff2",
+      "thmanyah-serif-display-bold.woff2",
+    ]);
+    expect(fonts).toContain('import localFont from "next/font/local"');
+    expect(fonts).toContain('import { Geist_Mono } from "next/font/google"');
+    expect(fonts.match(/localFont\(\{/g)).toHaveLength(2);
+
+    for (const [file, weight] of [
+      ["thmanyah-sans-regular.woff2", "400"],
+      ["thmanyah-sans-medium.woff2", "500"],
+      ["thmanyah-sans-bold.woff2", "700"],
+    ]) {
+      expect(sans).toMatch(
+        new RegExp(`path: "\\./fonts/${file}"[\\s\\S]*?weight: "${weight}"`),
+      );
+    }
+
+    for (const [file, weight] of [
+      ["thmanyah-serif-display-bold.woff2", "700"],
+      ["thmanyah-serif-display-black.woff2", "900"],
+    ]) {
+      expect(serif).toMatch(
+        new RegExp(`path: "\\./fonts/${file}"[\\s\\S]*?weight: "${weight}"`),
+      );
+    }
+
+    expect(sans).toContain('variable: "--font-thmanyah-sans"');
+    expect(sans).toContain('display: "swap"');
+    expect(sans).toContain("preload: true");
+    expect(sans).toContain('fallback: ["Arial", "sans-serif"]');
+    expect(sans).toContain('adjustFontFallback: "Arial"');
+    expect(serif).toContain('variable: "--font-thmanyah-serif-display"');
+    expect(serif).toContain('display: "swap"');
+    expect(serif).toContain("preload: false");
+    expect(serif).toContain('fallback: ["Times New Roman", "serif"]');
+    expect(serif).toContain('adjustFontFallback: "Times New Roman"');
+    expect(mono).toContain('variable: "--font-geist-mono"');
+    expect(mono).toContain('subsets: ["latin"]');
+    expect(mono).toContain('display: "swap"');
+    expect(fonts.match(/style: "normal"/g)).toHaveLength(5);
+  });
+
+  it("applies centralized font variables without direction-specific families", () => {
+    const layout = readProjectFile("src/app/[locale]/layout.tsx");
+    const css = readProjectFile("src/app/globals.css");
+    const appSources = filesWithin(appRoot)
+      .filter((filePath) => [".ts", ".tsx"].includes(extname(filePath)))
+      .filter((filePath) => !filePath.endsWith("/fonts.ts"))
+      .map((filePath) => readFileSync(filePath, "utf8"))
+      .join("\n");
+
+    expect(layout).toContain('from "@/app/fonts"');
+    expect(layout).toContain("thmanyahSans.variable");
+    expect(layout).toContain("thmanyahSerifDisplay.variable");
+    expect(layout).toContain("geistMono.variable");
+    expect(layout).not.toMatch(/Geist(?:_Mono)?|Noto_Sans_Arabic|localFont/);
+    expect(appSources).not.toMatch(
+      /from\s+["']next\/font\/(?:google|local)["']/,
+    );
+
+    expect(css).toContain("--font-sans: var(--font-thmanyah-sans)");
+    expect(css).toContain("--font-heading: var(--font-thmanyah-sans)");
+    expect(css).toContain("--font-display: var(--font-thmanyah-serif-display)");
+    expect(css).toContain("--font-mono: var(--font-geist-mono)");
+    expect(css).toContain("font-synthesis: none");
+    expect(css).not.toMatch(
+      /--font-application-sans|--font-geist-sans|--font-noto-sans-arabic/,
+    );
+    expect(css).not.toMatch(/@font-face|@import\s+url\(/);
+  });
+
+  it("uses only supported interface weights and reserves black for display", () => {
+    const sourceFiles = [
+      ...filesWithin(appRoot),
+      ...filesWithin(uiRoot),
+    ].filter((filePath) => [".ts", ".tsx"].includes(extname(filePath)));
+    const unsupportedWeight =
+      /\bfont-(?:thin|extralight|light|semibold|extrabold)\b/;
+
+    for (const filePath of sourceFiles) {
+      const source = readFileSync(filePath, "utf8");
+
+      expect(source, filePath).not.toMatch(unsupportedWeight);
+
+      for (const className of source.matchAll(/className="([^"]+)"/g)) {
+        if (className[1].split(/\s+/).includes("font-black")) {
+          expect(className[1], filePath).toMatch(/\bfont-display\b/);
+        }
+      }
+    }
+  });
+
   it("defines complete matching light and dark semantic color tokens", () => {
     const css = readProjectFile("src/app/globals.css");
     const lightTokens = tokenNames(cssBlock(css, ":root"));
@@ -128,8 +238,8 @@ describe("design system contracts", () => {
     const css = readProjectFile("src/app/globals.css");
 
     for (const token of [
-      "--font-geist-sans",
-      "--font-noto-sans-arabic",
+      "--font-thmanyah-sans",
+      "--font-thmanyah-serif-display",
       "--font-geist-mono",
       "--focus-ring-width",
       "--focus-ring-color",
@@ -153,6 +263,87 @@ describe("design system contracts", () => {
     expect(css).toContain("[data-directional]");
     expect(css).toContain('html[dir="rtl"] [data-directional]');
     expect(css).not.toMatch(/html\[dir=["']rtl["']\]\s+svg/);
+    expect(css).not.toMatch(/(^|[\s,>])svg\s*\{[^}]*(?:scaleX|rotate)/);
+    expect(css).not.toMatch(/\[dir=["']rtl["']\][^{]*\bsvg\b/);
+  });
+
+  it("aligns Select and DropdownMenu with logical direction utilities only", () => {
+    const select = readProjectFile("src/ui/primitives/select.tsx");
+    const dropdown = readProjectFile("src/ui/primitives/dropdown-menu.tsx");
+    const memberClasses = (source: string, member: string) =>
+      source.match(new RegExp(`function ${member}\\([\\s\\S]*?\\n}\\n`))?.[0] ??
+      "";
+
+    for (const [source, member] of [
+      [select, "SelectItem"],
+      [select, "SelectLabel"],
+      [dropdown, "DropdownMenuItem"],
+      [dropdown, "DropdownMenuLabel"],
+      [dropdown, "DropdownMenuCheckboxItem"],
+      [dropdown, "DropdownMenuRadioItem"],
+      [dropdown, "DropdownMenuSubTrigger"],
+    ] as const) {
+      expect(memberClasses(source, member), member).toContain("text-start");
+    }
+
+    // Selected/checked indicators sit at the logical end, never a physical side.
+    expect(memberClasses(select, "SelectItem")).toContain("absolute end-2");
+    expect(memberClasses(dropdown, "DropdownMenuCheckboxItem")).toContain(
+      "absolute end-2",
+    );
+    expect(memberClasses(dropdown, "DropdownMenuRadioItem")).toContain(
+      "absolute end-2",
+    );
+    expect(memberClasses(dropdown, "DropdownMenuShortcut")).toContain(
+      "ms-auto",
+    );
+
+    // Only the submenu chevron mirrors, through the explicit directional marker.
+    expect(memberClasses(dropdown, "DropdownMenuSubTrigger")).toMatch(
+      /<DirectionalIcon[\s\S]*?<ChevronRightIcon/,
+    );
+    expect(dropdown).not.toMatch(/rotate-180|scale-x-/);
+    expect(select).not.toMatch(/rotate-180|scale-x-/);
+  });
+
+  it("provides explicit direction to interactive Radix roots from the presentation boundary", () => {
+    const presentationUsages = [
+      "src/app/[locale]/(development)/design-system/showcase.tsx",
+      "src/app/[locale]/_components/language-switcher.tsx",
+    ];
+
+    for (const filePath of presentationUsages) {
+      const source = readProjectFile(filePath);
+      const roots = [
+        ...source.matchAll(/<(Select|DropdownMenu)(?=[\s>])([^>]*)>/g),
+      ];
+
+      expect(roots.length, filePath).toBeGreaterThan(0);
+
+      for (const [, root, attributes] of roots) {
+        expect(attributes, `${filePath} <${root}>`).toMatch(/\bdir=\{/);
+      }
+
+      expect(source, filePath).toMatch(/direction[?]?:\s*"rtl"\s*\|\s*"ltr"/);
+    }
+
+    // Direction is resolved from the locale at the server boundary, not guessed
+    // in the browser, and reusable primitives stay locale-agnostic.
+    for (const filePath of [
+      "src/app/[locale]/(development)/design-system/page.tsx",
+      "src/app/[locale]/page.tsx",
+    ]) {
+      const source = readProjectFile(filePath);
+
+      expect(source, filePath).toContain("getLocaleDirection(locale)");
+      expect(source, filePath).toContain('from "@/i18n/config"');
+    }
+
+    for (const filePath of filesWithin(resolve(uiRoot, "primitives"))) {
+      expect(readFileSync(filePath, "utf8"), filePath).not.toMatch(
+        /document\.(?:dir|documentElement)/,
+      );
+    }
   });
 
   it("keeps reusable UI free of raw palette and physical direction utilities", () => {

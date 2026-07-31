@@ -17,6 +17,16 @@ for (const { locale, direction, heading } of locales) {
   test(`${locale} showcase exposes the localized component reference`, async ({
     page,
   }) => {
+    const externalRequests: string[] = [];
+
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+
+      if (!["127.0.0.1", "localhost"].includes(url.hostname)) {
+        externalRequests.push(request.url());
+      }
+    });
+
     const response = await page.goto(`/${locale}/design-system`);
 
     expect(response?.ok()).toBe(true);
@@ -24,8 +34,221 @@ for (const { locale, direction, heading } of locales) {
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(heading);
     await expect(page.getByRole("heading", { level: 2 })).toHaveCount(7);
     await expect(page.locator('[data-slot="status-state"]')).toHaveCount(3);
+
+    const typography = await page.evaluate(async () => {
+      await document.fonts.ready;
+
+      const styleFor = (selector: string) => {
+        const style = getComputedStyle(document.querySelector(selector)!);
+
+        return {
+          family: style.fontFamily,
+          weight: style.fontWeight,
+          fontSize: Number.parseFloat(style.fontSize),
+          lineHeight: Number.parseFloat(style.lineHeight),
+        };
+      };
+      const rootStyle = getComputedStyle(document.documentElement);
+      const sansVariable = rootStyle
+        .getPropertyValue("--font-thmanyah-sans")
+        .trim();
+      const serifVariable = rootStyle
+        .getPropertyValue("--font-thmanyah-serif-display")
+        .trim();
+      const monoVariable = rootStyle
+        .getPropertyValue("--font-geist-mono")
+        .trim();
+      // Only the first family in each variable is the self-hosted face. The
+      // metric-adjusted `… Fallback` entries resolve through `local()`, so a
+      // check against the whole list depends on host-installed fonts.
+      const selfHosted = (familyList: string) =>
+        familyList.split(",")[0].trim();
+
+      return {
+        status: document.fonts.status,
+        sansVariable,
+        serifVariable,
+        monoVariable,
+        loadedFaces: [...document.fonts]
+          .filter(
+            (face) =>
+              face.status === "loaded" && !face.family.endsWith("Fallback"),
+          )
+          .map((face) => `${face.family} ${face.weight}`),
+        available: {
+          sansRegular: document.fonts.check(
+            `400 16px ${selfHosted(sansVariable)}`,
+          ),
+          sansMedium: document.fonts.check(
+            `500 16px ${selfHosted(sansVariable)}`,
+          ),
+          sansBold: document.fonts.check(
+            `700 16px ${selfHosted(sansVariable)}`,
+          ),
+          serifBold: document.fonts.check(
+            `700 16px ${selfHosted(serifVariable)}`,
+          ),
+          serifBlack: document.fonts.check(
+            `900 16px ${selfHosted(serifVariable)}`,
+          ),
+          mono: document.fonts.check(`400 16px ${selfHosted(monoVariable)}`),
+        },
+        body: styleFor('[data-typography="body"]'),
+        heading: styleFor('[data-typography="heading"]'),
+        label: styleFor('[data-typography="label"]'),
+        displayBold: styleFor('[data-typography="display-bold"]'),
+        displayBlack: styleFor('[data-typography="display-black"]'),
+        mono: styleFor('[data-typography="mono"]'),
+        // Only an element that actually clips can cut text off. Glyph ink
+        // reaching a couple of pixels past a tight line box is normal and
+        // stays visible, so `overflow: visible` elements are not clipping.
+        clippedElements: [
+          ...document.querySelectorAll<HTMLElement>(
+            "h1, h2, [data-typography], button, input, textarea",
+          ),
+        ]
+          .filter((element) => {
+            const { overflowX, overflowY } = getComputedStyle(element);
+
+            return (
+              element.clientWidth > 0 &&
+              element.clientHeight > 0 &&
+              ((overflowX !== "visible" &&
+                element.scrollWidth > element.clientWidth + 1) ||
+                (overflowY !== "visible" &&
+                  element.scrollHeight > element.clientHeight + 1))
+            );
+          })
+          .map(
+            (element) =>
+              element.getAttribute("data-typography") ??
+              element.getAttribute("data-slot") ??
+              element.tagName,
+          ),
+      };
+    });
+
+    const primaryFamily = (familyList: string) =>
+      familyList.split(",")[0].replaceAll('"', "").trim();
+
+    expect(typography.status).toBe("loaded");
+    // Every self-hosted weight actually loaded, and no unused weight shipped.
+    expect(typography.loadedFaces.sort()).toEqual([
+      "Geist Mono 100 900",
+      "thmanyahSans 400",
+      "thmanyahSans 500",
+      "thmanyahSans 700",
+      "thmanyahSerifDisplay 700",
+      "thmanyahSerifDisplay 900",
+    ]);
+    expect(typography.available).toEqual({
+      sansRegular: true,
+      sansMedium: true,
+      sansBold: true,
+      serifBold: true,
+      serifBlack: true,
+      mono: true,
+    });
+    expect(typography.body.family).toContain(
+      primaryFamily(typography.sansVariable),
+    );
+    expect(typography.body.family).not.toMatch(/Geist Sans|Noto Sans Arabic/i);
+    expect(typography.heading.family).toContain(
+      primaryFamily(typography.sansVariable),
+    );
+    expect(typography.label.family).toContain(
+      primaryFamily(typography.sansVariable),
+    );
+    expect(typography.displayBold.family).toContain(
+      primaryFamily(typography.serifVariable),
+    );
+    expect(typography.displayBlack.family).toContain(
+      primaryFamily(typography.serifVariable),
+    );
+    expect(typography.mono.family).toContain(
+      primaryFamily(typography.monoVariable),
+    );
+    expect(typography.body.weight).toBe("400");
+    expect(typography.heading.weight).toBe("700");
+    expect(typography.label.weight).toBe("500");
+    expect(typography.displayBold.weight).toBe("700");
+    expect(typography.displayBlack.weight).toBe("900");
+    expect(typography.clippedElements).toEqual([]);
+
+    // Every scale pairs its size with a line height that leaves the text room.
+    for (const sample of [
+      typography.body,
+      typography.heading,
+      typography.label,
+      typography.displayBold,
+      typography.displayBlack,
+      typography.mono,
+    ]) {
+      expect(sample.lineHeight).toBeGreaterThan(sample.fontSize);
+    }
+
+    expect(externalRequests).toEqual([]);
   });
 }
+
+test("interactive primitives inherit the application family", async ({
+  page,
+}) => {
+  await page.goto("/en/design-system");
+
+  await page.getByRole("button", { name: "Open dialog" }).click();
+  const dialog = page.getByRole("dialog", { name: "Review details" });
+  await expect(dialog).toBeVisible();
+
+  const dialogFamily = await dialog.evaluate(
+    (element) => getComputedStyle(element).fontFamily,
+  );
+  await page.keyboard.press("Escape");
+
+  await page.getByRole("button", { name: "Open menu" }).click();
+  const menu = page.getByRole("menu");
+  await expect(menu).toBeVisible();
+  const menuFamily = await menu.evaluate(
+    (element) => getComputedStyle(element).fontFamily,
+  );
+  await page.keyboard.press("Escape");
+
+  const select = page.getByRole("combobox", { name: "Workspace" });
+  await select.click();
+  const listbox = page.getByRole("listbox");
+  await expect(listbox).toBeVisible();
+  const listboxFamily = await listbox.evaluate(
+    (element) => getComputedStyle(element).fontFamily,
+  );
+  await page.keyboard.press("Escape");
+
+  const families = await page.evaluate(() => {
+    const family = (selector: string) =>
+      getComputedStyle(document.querySelector(selector)!).fontFamily;
+
+    return {
+      application: getComputedStyle(document.documentElement)
+        .getPropertyValue("--font-thmanyah-sans")
+        .split(",")[0]
+        .replaceAll('"', "")
+        .trim(),
+      button: family('[data-slot="button"]'),
+      input: family('[data-slot="input"]'),
+      textarea: family('[data-slot="textarea"]'),
+    };
+  });
+
+  for (const family of [
+    families.button,
+    families.input,
+    families.textarea,
+    dialogFamily,
+    menuFamily,
+    listboxFamily,
+  ]) {
+    expect(family).toContain(families.application);
+  }
+});
 
 test("keyboard workflows preserve overlay focus and support transient controls", async ({
   page,

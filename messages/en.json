@@ -29,6 +29,8 @@
       "heading": "Clear multilingual hierarchy",
       "body": "Body text stays comfortable to read in both English and Arabic.",
       "label": "Compact interface label",
+      "displayBold": "Editorial display emphasis",
+      "displayBlack": "Distinctive display statement",
       "code": "request_01JXYZ"
     },
     "controls": {
@@ -100,6 +102,8 @@
       "menuLabel": "Actions",
       "menuFirst": "View details",
       "menuSecond": "Duplicate",
+      "menuMore": "Move to",
+      "menuNested": "Archived projects",
       "menuDestructive": "Remove",
       "showToast": "Show toast",
       "toastMessage": "Caller-provided notification",
