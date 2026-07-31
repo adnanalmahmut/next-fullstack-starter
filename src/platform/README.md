@@ -40,3 +40,22 @@ Structured logging and request correlation are implemented under
 
 Architecture and usage rules are documented in
 [`docs/architecture/observability.md`](../../docs/architecture/observability.md).
+
+## Proxy
+
+The request pipeline composed by `src/proxy.ts` is implemented under
+`src/platform/proxy`.
+
+- `compose.ts` runs the steps in a fixed order.
+- `context.ts` carries only the request, pathname, route area, and request ID.
+- `route-classifier.ts` and `route-rules.ts` classify a pathname without reading
+  a session or producing a response.
+- `steps` implement request-ID forwarding, locale negotiation, and baseline
+  security headers.
+
+The pipeline is not an authorization boundary and must not access a database, a
+cache, a queue, or a business module.
+
+Implementation rules are documented in
+[`proxy/README.md`](./proxy/README.md) and the architectural policy in
+[`docs/architecture/proxy-request-pipeline.md`](../../docs/architecture/proxy-request-pipeline.md).

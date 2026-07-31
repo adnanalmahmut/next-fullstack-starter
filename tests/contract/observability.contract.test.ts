@@ -255,22 +255,30 @@ describe("observability contracts", () => {
     expect(reporterSource).not.toContain("request.path");
   });
 
-  it("propagates the request ID without changing the proxy matcher", () => {
-    const source = readProjectFile("src/proxy.ts");
-    const requestHeaderWrite = source.indexOf(
+  it("propagates the request ID through the proxy pipeline", () => {
+    const stepSource = readProjectFile(
+      "src/platform/proxy/steps/request-id.step.ts",
+    );
+
+    expect(stepSource).toContain(
       "request.headers.set(REQUEST_ID_HEADER, requestId)",
     );
-    const middlewareCall = source.indexOf("handleI18nRouting(request)");
-    const responseHeaderWrite = source.indexOf(
+    expect(stepSource).toContain(
       "response.headers.set(REQUEST_ID_HEADER, requestId)",
     );
 
-    expect(requestHeaderWrite).toBeGreaterThan(-1);
-    expect(middlewareCall).toBeGreaterThan(requestHeaderWrite);
-    expect(responseHeaderWrite).toBeGreaterThan(middlewareCall);
-    expect(source).toContain(
-      'matcher: "/((?!api|trpc|_next|_vercel|.*\\\\..*).*)"',
+    const composeSource = readProjectFile("src/platform/proxy/compose.ts");
+    const requestStep = composeSource.indexOf(
+      "applyRequestIdToRequest(request)",
     );
+    const localeStep = composeSource.indexOf("applyLocaleRouting(context)");
+    const responseStep = composeSource.indexOf(
+      "applyRequestIdToResponse(response, context.requestId)",
+    );
+
+    expect(requestStep).toBeGreaterThan(-1);
+    expect(localeStep).toBeGreaterThan(requestStep);
+    expect(responseStep).toBeGreaterThan(localeStep);
   });
 
   // A fresh ESLint instance resolves the flat config and builds the type-aware

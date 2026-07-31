@@ -63,10 +63,11 @@ An explicit locale prefix always takes precedence. An unprefixed route uses the 
 
 ## Locale Cookie
 
-The active locale is synchronized to the `APP_LOCALE` cookie by:
+The active locale is synchronized to the `APP_LOCALE` cookie by the locale step
+of the proxy request pipeline:
 
 ```text
-src/proxy.ts
+src/platform/proxy/steps/locale.step.ts
 ```
 
 The cookie:
@@ -75,6 +76,8 @@ The cookie:
 - Is updated when a localized route is requested.
 - Is updated after language-switcher navigation.
 - Never overrides an explicit locale in the URL.
+- Is not rewritten when the incoming value already matches the resolved locale.
+- Is not written for API routes, which skip locale negotiation entirely.
 - Can be consumed by Route Handlers and backend-for-frontend integrations.
 
 For server-side API calls made during the current page request, use the locale from the routing or request context directly.

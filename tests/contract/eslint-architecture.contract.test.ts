@@ -377,6 +377,100 @@ describe("ESLint architecture contract", () => {
     });
   });
 
+  describe("proxy boundaries", () => {
+    it.each([
+      {
+        name: "the pipeline may use request APIs and locale routing",
+        filePath: "src/platform/proxy/steps/contract-fixture.ts",
+        code: `
+          import createMiddleware from "next-intl/middleware";
+          import { NextResponse } from "next/server";
+
+          import { routing } from "@/i18n/routing";
+
+          export const value = [createMiddleware, NextResponse, routing];
+        `,
+      },
+      {
+        name: "the composition root may use the pipeline",
+        filePath: "src/proxy.ts",
+        code: `
+          import type { NextRequest } from "next/server";
+
+          import { runRequestPipeline } from "./platform/proxy/compose";
+
+          export function proxy(request: NextRequest) {
+            return runRequestPipeline(request);
+          }
+        `,
+      },
+    ])("allows: $name", async ({ code, filePath }) => {
+      const messages = await lintArchitecture(code, filePath);
+
+      const layerMessages = messages.filter(
+        ({ ruleId }) => ruleId === layerBoundaryRule,
+      );
+
+      expect(layerMessages).toEqual([]);
+    });
+
+    it.each([
+      {
+        name: "pipeline importing Prisma",
+        filePath: "src/platform/proxy/contract-fixture-prisma.ts",
+        code: `
+          export { PrismaClient } from "@prisma/client";
+        `,
+        message: "Prisma access is restricted to infrastructure adapters",
+      },
+      {
+        name: "pipeline importing the database platform",
+        filePath: "src/platform/proxy/contract-fixture-database.ts",
+        code: `
+          export { database } from "@/platform/database/index.server";
+        `,
+        message: "Direct database access is restricted to infrastructure",
+      },
+      {
+        name: "pipeline importing Redis",
+        filePath: "src/platform/proxy/contract-fixture-redis.ts",
+        code: `
+          export { Redis } from "ioredis";
+        `,
+        message: "Redis access is restricted to infrastructure adapters",
+      },
+      {
+        name: "pipeline importing a queue client",
+        filePath: "src/platform/proxy/contract-fixture-queue.ts",
+        code: `
+          export { Queue } from "bullmq";
+        `,
+        message: "Queue access is restricted to infrastructure adapters",
+      },
+      {
+        name: "pipeline importing a business module",
+        filePath: "src/platform/proxy/contract-fixture-module.ts",
+        code: `
+          export { value } from "@/modules/contract_fixture/index.server";
+        `,
+        message: "must not depend on business modules",
+      },
+      {
+        name: "composition root importing Better Auth",
+        filePath: "src/proxy.ts",
+        code: `
+          export { betterAuth } from "better-auth";
+        `,
+        message:
+          "Better Auth must not be accessed from this architectural layer",
+      },
+    ])("rejects: $name", async ({ code, filePath, message }) => {
+      const messages = await lintArchitecture(code, filePath);
+
+      expectArchitectureError(messages, layerBoundaryRule, message);
+    });
+  });
+
   describe("client and server boundaries", () => {
     it.each([
       {

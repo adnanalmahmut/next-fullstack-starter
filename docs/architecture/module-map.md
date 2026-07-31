@@ -105,10 +105,31 @@ Responsibilities:
 - Emit Pino JSON with stable fields, event names, and redaction.
 - Delegate safe Next.js request-error reporting without exposing raw errors.
 
-The proxy integration remains limited to paths already covered by its locale
-matcher. Future Action, Route Handler, webhook, cron, and job boundaries must
-initialize or propagate their own context. The detailed policy is defined in
+The proxy integration remains limited to paths covered by its matcher. Future
+Action, Route Handler, webhook, cron, and job boundaries must initialize or
+propagate their own context. The detailed policy is defined in
 [`observability.md`](./observability.md).
+
+### Proxy request pipeline
+
+```text
+src/proxy.ts
+src/platform/proxy
+```
+
+Responsibilities:
+
+- Keep the composition root a matcher declaration and a single pipeline call.
+- Negotiate the locale through `next-intl` and synchronize the `APP_LOCALE`
+  cookie.
+- Forward the `x-request-id` correlation value upstream and return it downstream.
+- Apply a minimal baseline of response security headers.
+- Classify a pathname into a route area with pure, data-driven rules.
+
+The pipeline makes no authorization decision and reads no session. Protected
+pages, Route Handlers, Server Actions, and use cases must authenticate and
+authorize independently. The detailed policy is defined in
+[`proxy-request-pipeline.md`](./proxy-request-pipeline.md).
 
 ### Design system
 
@@ -243,6 +264,7 @@ pnpm verify
 - [Layer and Module Boundaries](./layer-boundaries.md)
 - [Error Handling Contracts](./error-handling.md)
 - [Observability Foundation](./observability.md)
+- [Proxy Request Pipeline](./proxy-request-pipeline.md)
 - [Design System](../design-system/README.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)

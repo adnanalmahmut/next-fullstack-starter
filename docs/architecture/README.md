@@ -8,6 +8,7 @@ System-level architectural documentation lives here.
 - [Module Map](./module-map.md)
 - [Error Handling Contracts](./error-handling.md)
 - [Observability Foundation](./observability.md)
+- [Proxy Request Pipeline](./proxy-request-pipeline.md)
 - [Design System](../design-system/README.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)
@@ -28,6 +29,8 @@ Current documentation covers:
 - Module ownership and public entry points.
 - Typed internal errors and safe transport contracts.
 - Request correlation, request-scoped context, and structured logging.
+- Locale negotiation, request correlation, baseline security headers, and route
+  classification in the proxy request pipeline.
 - Semantic design tokens, reusable presentation primitives, and RTL/LTR UI.
 
 Future documentation may cover:

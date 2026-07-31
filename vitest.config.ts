@@ -17,6 +17,15 @@ export default defineConfig({
     environment: "node",
     setupFiles: ["./tests/vitest.setup.ts"],
 
+    server: {
+      deps: {
+        // `next-intl/middleware` ships ESM that imports the extensionless
+        // `next/server` subpath. Transforming the package through Vite lets its
+        // imports resolve through the `next` package exports map.
+        inline: ["next-intl"],
+      },
+    },
+
     projects: [
       {
         extends: true,

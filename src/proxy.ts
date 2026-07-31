@@ -1,35 +1,17 @@
-import createMiddleware from "next-intl/middleware";
 import type { NextRequest } from "next/server";
 
-import { i18nConfig } from "./i18n/config";
-import { resolveLocaleFromPathname } from "./i18n/resolve-locale";
-import { routing } from "./i18n/routing";
-import {
-  REQUEST_ID_HEADER,
-  resolveRequestId,
-} from "./platform/observability/request-id.server";
+import { runRequestPipeline } from "./platform/proxy/compose";
 
-const handleI18nRouting = createMiddleware(routing);
-
-export default function proxy(request: NextRequest) {
-  const requestId = resolveRequestId(request.headers.get(REQUEST_ID_HEADER));
-  request.headers.set(REQUEST_ID_HEADER, requestId);
-
-  const response = handleI18nRouting(request);
-  const locale = resolveLocaleFromPathname(request.nextUrl.pathname);
-
-  const { name, ...cookieOptions } = i18nConfig.localeCookie;
-  const currentCookie = request.cookies.get(name)?.value;
-
-  if (currentCookie !== locale) {
-    response.cookies.set(name, locale, cookieOptions);
-  }
-
-  response.headers.set(REQUEST_ID_HEADER, requestId);
-
-  return response;
+export function proxy(request: NextRequest) {
+  return runRequestPipeline(request);
 }
 
 export const config = {
-  matcher: "/((?!api|trpc|_next|_vercel|.*\\..*).*)",
+  matcher: [
+    // Application pages, excluding Next.js internals, hosting internals, and
+    // any path that carries a file extension.
+    "/((?!_next|_vercel|.*\\..*).*)",
+    // API routes, including paths that carry a file extension.
+    "/api/:path*",
+  ],
 };
