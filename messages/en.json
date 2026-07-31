@@ -9,5 +9,128 @@
     "languageLabel": "Language",
     "arabic": "العربية",
     "english": "English"
+  },
+  "DesignSystem": {
+    "eyebrow": "Development reference",
+    "title": "Design system foundation",
+    "description": "A focused reference for semantic tokens, accessible primitives, reusable states, and bidirectional behavior.",
+    "tokens": {
+      "title": "Tokens and typography",
+      "description": "Semantic color, type, geometry, and elevation remain consistent across themes.",
+      "primary": "Primary",
+      "success": "Success",
+      "warning": "Warning",
+      "info": "Information",
+      "light": "Light surface",
+      "dark": "Dark surface",
+      "surface": "The same semantic component contract works on both token surfaces."
+    },
+    "typography": {
+      "heading": "Clear multilingual hierarchy",
+      "body": "Body text stays comfortable to read in both English and Arabic.",
+      "label": "Compact interface label",
+      "code": "request_01JXYZ"
+    },
+    "controls": {
+      "title": "Controls",
+      "description": "Stable variants, sizes, accessible states, and explicit directional icons.",
+      "primary": "Primary",
+      "secondary": "Secondary",
+      "outline": "Outline",
+      "ghost": "Ghost",
+      "destructive": "Destructive",
+      "link": "Link",
+      "disabled": "Disabled",
+      "small": "Small",
+      "default": "Default",
+      "large": "Large",
+      "notifications": "Notifications",
+      "pending": "Working",
+      "forward": "Continue"
+    },
+    "badges": {
+      "default": "Default",
+      "secondary": "Secondary",
+      "outline": "Outline",
+      "destructive": "Destructive"
+    },
+    "forms": {
+      "title": "Forms",
+      "description": "Labels, descriptions, validation, controls, and logical alignment compose predictably.",
+      "name": "Name",
+      "namePlaceholder": "Enter a display name",
+      "nameDescription": "This example demonstrates descriptive help text.",
+      "email": "Email address",
+      "emailError": "Enter a valid email address.",
+      "message": "Message",
+      "messagePlaceholder": "Write a short message",
+      "checkbox": "Send me interface updates",
+      "select": "Workspace",
+      "selectPlaceholder": "Choose a workspace",
+      "firstOption": "Product",
+      "secondOption": "Operations",
+      "disabledOption": "Archived"
+    },
+    "feedback": {
+      "title": "Feedback and surfaces",
+      "description": "Status meaning combines text, icons, and semantic tone rather than color alone.",
+      "defaultTitle": "General notice",
+      "defaultDescription": "Use the neutral alert for contextual information.",
+      "successTitle": "Completed",
+      "successDescription": "The requested operation completed successfully.",
+      "warningTitle": "Review needed",
+      "warningDescription": "Check the details before continuing.",
+      "errorTitle": "Unable to continue",
+      "errorDescription": "The operation needs attention before it can proceed."
+    },
+    "card": {
+      "title": "Composed card",
+      "description": "Header, content, and footer remain separate semantic regions.",
+      "footer": "Supporting information"
+    },
+    "overlays": {
+      "title": "Overlays and transient feedback",
+      "description": "Radix primitives retain keyboard focus, dismissal, direction, and shared layering.",
+      "openDialog": "Open dialog",
+      "close": "Close dialog",
+      "dialogTitle": "Review details",
+      "dialogDescription": "The dialog has a visible title and returns focus when it closes.",
+      "dialogAction": "Understood",
+      "openMenu": "Open menu",
+      "menuLabel": "Actions",
+      "menuFirst": "View details",
+      "menuSecond": "Duplicate",
+      "menuDestructive": "Remove",
+      "showToast": "Show toast",
+      "toastMessage": "Caller-provided notification",
+      "confirmTitle": "Remove this example?",
+      "confirmDescription": "This demonstrates a destructive confirmation without business logic.",
+      "confirm": "Remove",
+      "cancel": "Cancel",
+      "delete": "Destructive confirmation",
+      "pendingMode": "Demonstrate pending state"
+    },
+    "patterns": {
+      "title": "Reusable states",
+      "description": "Small compositions cover loading, empty, error, forbidden, and not-found experiences.",
+      "loading": "Loading content",
+      "emptyTitle": "Nothing here yet",
+      "emptyDescription": "Add the first item or return to the previous view.",
+      "primaryAction": "Add item",
+      "secondaryAction": "Go back",
+      "errorTitle": "Something went wrong",
+      "errorDescription": "Try the operation again or return later.",
+      "forbiddenTitle": "Access is restricted",
+      "forbiddenDescription": "Your current access does not include this content.",
+      "notFoundTitle": "Content not found",
+      "notFoundDescription": "The requested content is unavailable or has moved."
+    },
+    "direction": {
+      "title": "Bidirectional content",
+      "description": "Logical layout follows the locale while identifiers and user-authored content declare their own direction.",
+      "userText": "User-authored text",
+      "userTextExample": "This field uses automatic direction — هذا الحقل يحدد الاتجاه تلقائيًا.",
+      "identifiers": "Direction-independent identifiers"
+    }
   }
 }

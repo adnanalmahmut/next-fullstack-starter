@@ -3,6 +3,14 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
 
 import { routing } from "@/i18n/routing";
+import { PageContainer } from "@/ui/layout/page-container";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/ui/primitives/card";
 
 import { LanguageSwitcher } from "./_components/language-switcher";
 
@@ -27,24 +35,28 @@ export default async function HomePage({ params }: HomePageProps) {
   });
 
   return (
-    <main className="flex flex-1 items-center justify-center bg-zinc-50 px-6 py-16 dark:bg-black">
-      <section className="flex w-full max-w-3xl flex-col gap-8 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm sm:p-12 dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="space-y-4">
-          <p className="text-sm font-medium text-zinc-500 uppercase dark:text-zinc-400">
-            Next.js 16 · next-intl
-          </p>
+    <main className="flex flex-1 items-center bg-surface py-16">
+      <PageContainer className="max-w-3xl">
+        <Card className="shadow-subtle">
+          <CardHeader className="gap-4 px-8 pt-4 sm:px-12 sm:pt-8">
+            <p className="text-label font-medium text-muted-foreground uppercase">
+              Next.js 16 · next-intl
+            </p>
 
-          <h1 className="text-4xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
-            {t("title")}
-          </h1>
-
-          <p className="max-w-2xl text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            {t("description")}
-          </p>
-        </div>
-
-        <LanguageSwitcher />
-      </section>
+            <CardTitle>
+              <h1 className="text-heading-xl font-semibold tracking-tight">
+                {t("title")}
+              </h1>
+            </CardTitle>
+            <CardDescription className="max-w-2xl text-body-lg">
+              {t("description")}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="px-8 pb-4 sm:px-12 sm:pb-8">
+            <LanguageSwitcher />
+          </CardContent>
+        </Card>
+      </PageContainer>
     </main>
   );
 }

@@ -42,6 +42,15 @@ export default defineConfig({
           include: ["tests/contract/**/*.contract.test.{ts,tsx}"],
         },
       },
+      {
+        extends: true,
+        test: {
+          name: "ui",
+          environment: "jsdom",
+          include: ["tests/ui/**/*.ui.test.{ts,tsx}"],
+          setupFiles: ["./tests/vitest.setup.ts", "./tests/ui/vitest.setup.ts"],
+        },
+      },
     ],
 
     coverage: {

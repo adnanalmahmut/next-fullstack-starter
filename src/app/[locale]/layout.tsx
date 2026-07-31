@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Noto_Sans_Arabic } from "next/font/google";
 import { NextIntlClientProvider, hasLocale } from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
@@ -7,6 +7,7 @@ import { notFound } from "next/navigation";
 import { publicEnv } from "@/config/env/index.client";
 import { getLocaleDirection } from "@/i18n/config";
 import { routing } from "@/i18n/routing";
+import { Toaster } from "@/ui/primitives/sonner";
 
 import "../globals.css";
 
@@ -18,6 +19,12 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+const notoSansArabic = Noto_Sans_Arabic({
+  variable: "--font-noto-sans-arabic",
+  subsets: ["arabic"],
+  display: "swap",
 });
 
 type LocaleLayoutProps = Readonly<{
@@ -63,15 +70,17 @@ export default async function LocaleLayout({
   }
 
   setRequestLocale(locale);
+  const direction = getLocaleDirection(locale);
 
   return (
     <html
       lang={locale}
-      dir={getLocaleDirection(locale)}
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      dir={direction}
+      className={`${geistSans.variable} ${geistMono.variable} ${notoSansArabic.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
         <NextIntlClientProvider>{children}</NextIntlClientProvider>
+        <Toaster dir={direction} />
       </body>
     </html>
   );
