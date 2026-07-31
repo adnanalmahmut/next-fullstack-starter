@@ -107,16 +107,20 @@ non-string value is replaced with `crypto.randomUUID()`. A request ID is only a
 correlation identifier; it is not identity, authentication, authorization, or
 proof of origin.
 
-For paths currently handled by `src/proxy.ts`, the proxy:
+For paths handled by the proxy, the request-ID step of the pipeline in
+`src/platform/proxy`:
 
 1. validates or creates the ID;
 2. places it on the request headers before `next-intl` creates its response, so
    Next.js can forward it to downstream server handling;
 3. places the same ID on the outgoing response.
 
-The locale matcher and locale-cookie behavior are unchanged. This integration
-does not cover every future API, webhook, cron, Server Action, Route Handler, or
-job boundary.
+Upstream propagation is asserted end to end through the development-and-test-only
+`/api/diagnostics/request-context` handler. The proxy matcher, the pipeline
+order, and the locale-cookie policy are documented in
+[`proxy-request-pipeline.md`](./proxy-request-pipeline.md). This integration does
+not cover every future API, webhook, cron, Server Action, Route Handler, or job
+boundary.
 
 ## Request context lifecycle
 
@@ -287,8 +291,8 @@ Do not place user-facing or localized text in event names or context fields.
 Future Server Action and Route Handler factories, APIs, webhooks, cron
 boundaries, and job workers must explicitly initialize or propagate request or
 job context. Authentication may later populate actor fields after identity is
-actually verified. Those integrations, complete proxy composition, audit
-storage, metrics, traces, and alerting are not implemented.
+actually verified. Those integrations, audit storage, metrics, traces, and
+alerting are not implemented.
 
 Production emits JSON to the process output stream. The deployment platform is
 responsible for collection, retention, access control, indexing, and alerting.

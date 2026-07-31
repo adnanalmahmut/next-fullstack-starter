@@ -30,6 +30,10 @@ const restrictedImportPatterns = {
     regex: "^(?:(?:redis|ioredis)(?:/|$)|@redis/)",
     message: "Redis access is restricted to infrastructure adapters.",
   },
+  queue: {
+    regex: "^bullmq(?:/|$)",
+    message: "Queue access is restricted to infrastructure adapters.",
+  },
   betterAuth: {
     regex: "^better-auth(?:/|$)",
     message: "Better Auth must not be accessed from this architectural layer.",
@@ -82,6 +86,35 @@ const eslintConfig = defineConfig([
     ignores: ["src/**/*.{test,spec}.{ts,tsx}"],
     rules: {
       "no-console": "error",
+    },
+  },
+  {
+    name: "architecture/proxy",
+    files: ["src/proxy.ts", "src/platform/proxy/**/*.ts"],
+    rules: {
+      "no-restricted-imports": restrictImports(
+        restrictedImportPatterns.react,
+        restrictedImportPatterns.prisma,
+        restrictedImportPatterns.database,
+        restrictedImportPatterns.postgres,
+        restrictedImportPatterns.redis,
+        restrictedImportPatterns.betterAuth,
+        restrictedImportPatterns.queue,
+        {
+          regex: "^@/modules(?:/|$)",
+          message:
+            "The proxy request pipeline must not depend on business modules.",
+        },
+        {
+          regex: "^@/ui(?:/|$)",
+          message: "The proxy request pipeline must not depend on UI code.",
+        },
+        {
+          regex: "^(?:\\.\\.?/)+(?:[^/]+/)*(?:modules|ui)(?:/|$)",
+          message:
+            "The proxy request pipeline must not reach business modules or UI code through relative imports.",
+        },
+      ),
     },
   },
   {
