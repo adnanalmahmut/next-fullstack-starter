@@ -86,11 +86,12 @@ test.describe("localized home page", () => {
     page,
     context,
   }) => {
-    await page.goto("/ar?source=e2e");
+    await page.goto("/ar?source=e2e#details");
 
-    await page.getByRole("combobox", { name: "اللغة" }).selectOption("en");
+    await page.getByRole("combobox", { name: "اللغة" }).click();
+    await page.getByRole("option", { name: "English" }).click();
 
-    await expect(page).toHaveURL(/\/en\?source=e2e$/);
+    await expect(page).toHaveURL(/\/en\?source=e2e#details$/);
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
     await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
 

@@ -110,6 +110,25 @@ matcher. Future Action, Route Handler, webhook, cron, and job boundaries must
 initialize or propagate their own context. The detailed policy is defined in
 [`observability.md`](./observability.md).
 
+### Design system
+
+```text
+src/ui/primitives
+src/ui/patterns
+src/ui/layout
+```
+
+Responsibilities:
+
+- Keep reviewed shadcn/ui source client-safe and presentation-only.
+- Expose semantic, direction-aware primitives through direct imports.
+- Compose generic loading, empty, status, and destructive-confirmation states.
+- Provide the route-neutral `PageContainer` layout primitive.
+
+Visual tokens live in `src/app/globals.css`; localized copy remains at
+presentation boundaries. The detailed policies are defined in the
+[design-system documentation](../design-system/README.md).
+
 ## Required module template
 
 A new module starts with the minimum structure required by its feature:
@@ -224,5 +243,6 @@ pnpm verify
 - [Layer and Module Boundaries](./layer-boundaries.md)
 - [Error Handling Contracts](./error-handling.md)
 - [Observability Foundation](./observability.md)
+- [Design System](../design-system/README.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)

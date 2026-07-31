@@ -9,5 +9,132 @@
     "languageLabel": "اللغة",
     "arabic": "العربية",
     "english": "English"
+  },
+  "DesignSystem": {
+    "eyebrow": "مرجع لبيئة التطوير",
+    "title": "أساس نظام التصميم",
+    "description": "مرجع مركز للرموز الدلالية والمكونات القابلة للوصول والحالات القابلة لإعادة الاستخدام والسلوك ثنائي الاتجاه.",
+    "tokens": {
+      "title": "الرموز والطباعة",
+      "description": "تبقى الألوان الدلالية والطباعة والهندسة والارتفاع متسقة عبر السمات.",
+      "primary": "أساسي",
+      "success": "نجاح",
+      "warning": "تحذير",
+      "info": "معلومة",
+      "light": "سطح فاتح",
+      "dark": "سطح داكن",
+      "surface": "يعمل عقد المكون الدلالي نفسه على سطحي الرموز."
+    },
+    "typography": {
+      "heading": "تسلسل بصري واضح متعدد اللغات",
+      "body": "يبقى النص الأساسي مريحًا للقراءة بالعربية والإنجليزية.",
+      "label": "تسمية واجهة مدمجة",
+      "displayBold": "تأكيد تحريري بارز",
+      "displayBlack": "عبارة عرض مميزة",
+      "code": "request_01JXYZ"
+    },
+    "controls": {
+      "title": "عناصر التحكم",
+      "description": "أنماط وأحجام وحالات وصول مستقرة وأيقونات اتجاهية صريحة.",
+      "primary": "أساسي",
+      "secondary": "ثانوي",
+      "outline": "حدود",
+      "ghost": "شفاف",
+      "destructive": "خطير",
+      "link": "رابط",
+      "disabled": "معطل",
+      "small": "صغير",
+      "default": "افتراضي",
+      "large": "كبير",
+      "notifications": "الإشعارات",
+      "pending": "جارٍ التنفيذ",
+      "forward": "متابعة"
+    },
+    "badges": {
+      "default": "افتراضية",
+      "secondary": "ثانوية",
+      "outline": "محددة",
+      "destructive": "خطيرة"
+    },
+    "forms": {
+      "title": "النماذج",
+      "description": "تتألف التسميات والأوصاف والتحقق وعناصر التحكم والمحاذاة المنطقية بصورة متوقعة.",
+      "name": "الاسم",
+      "namePlaceholder": "أدخل اسم العرض",
+      "nameDescription": "يوضح هذا المثال نص المساعدة الوصفي.",
+      "email": "البريد الإلكتروني",
+      "emailError": "أدخل عنوان بريد إلكتروني صالحًا.",
+      "message": "الرسالة",
+      "messagePlaceholder": "اكتب رسالة قصيرة",
+      "checkbox": "أرسل لي تحديثات الواجهة",
+      "select": "مساحة العمل",
+      "selectPlaceholder": "اختر مساحة عمل",
+      "firstOption": "المنتج",
+      "secondOption": "العمليات",
+      "disabledOption": "مؤرشفة"
+    },
+    "feedback": {
+      "title": "الملاحظات والأسطح",
+      "description": "يجمع معنى الحالة بين النص والأيقونة والنبرة الدلالية بدل الاعتماد على اللون وحده.",
+      "defaultTitle": "تنبيه عام",
+      "defaultDescription": "استخدم التنبيه المحايد للمعلومات السياقية.",
+      "successTitle": "اكتمل",
+      "successDescription": "اكتملت العملية المطلوبة بنجاح.",
+      "warningTitle": "تحتاج إلى مراجعة",
+      "warningDescription": "تحقق من التفاصيل قبل المتابعة.",
+      "errorTitle": "تعذرت المتابعة",
+      "errorDescription": "تحتاج العملية إلى معالجة قبل أن تتابع."
+    },
+    "card": {
+      "title": "بطاقة مركبة",
+      "description": "يبقى الرأس والمحتوى والتذييل مناطق دلالية مستقلة.",
+      "footer": "معلومات مساندة"
+    },
+    "overlays": {
+      "title": "الطبقات والملاحظات المؤقتة",
+      "description": "تحافظ مكونات Radix على لوحة المفاتيح والتركيز والإغلاق والاتجاه والطبقات المشتركة.",
+      "openDialog": "فتح مربع الحوار",
+      "close": "إغلاق مربع الحوار",
+      "dialogTitle": "مراجعة التفاصيل",
+      "dialogDescription": "لمربع الحوار عنوان ظاهر ويعيد التركيز عند إغلاقه.",
+      "dialogAction": "فهمت",
+      "openMenu": "فتح القائمة",
+      "menuLabel": "الإجراءات",
+      "menuFirst": "عرض التفاصيل",
+      "menuSecond": "تكرار",
+      "menuMore": "نقل إلى",
+      "menuNested": "المشاريع المؤرشفة",
+      "menuDestructive": "إزالة",
+      "showToast": "إظهار إشعار",
+      "toastMessage": "إشعار يقدمه المستدعي",
+      "confirmTitle": "إزالة هذا المثال؟",
+      "confirmDescription": "يوضح هذا تأكيدًا خطيرًا دون منطق أعمال.",
+      "confirm": "إزالة",
+      "cancel": "إلغاء",
+      "delete": "تأكيد إجراء خطير",
+      "pendingMode": "عرض حالة الانتظار"
+    },
+    "patterns": {
+      "title": "الحالات القابلة لإعادة الاستخدام",
+      "description": "تغطي تركيبات صغيرة حالات التحميل والفراغ والخطأ والمنع وعدم العثور.",
+      "loading": "جارٍ تحميل المحتوى",
+      "emptyTitle": "لا يوجد محتوى بعد",
+      "emptyDescription": "أضف العنصر الأول أو عد إلى العرض السابق.",
+      "primaryAction": "إضافة عنصر",
+      "secondaryAction": "رجوع",
+      "errorTitle": "حدث خطأ",
+      "errorDescription": "حاول تنفيذ العملية مجددًا أو عد لاحقًا.",
+      "forbiddenTitle": "الوصول مقيد",
+      "forbiddenDescription": "صلاحياتك الحالية لا تشمل هذا المحتوى.",
+      "notFoundTitle": "لم يُعثر على المحتوى",
+      "notFoundDescription": "المحتوى المطلوب غير متاح أو نُقل."
+    },
+    "direction": {
+      "title": "المحتوى ثنائي الاتجاه",
+      "description": "يتبع التخطيط المنطقي لغة الصفحة بينما تحدد المعرّفات والنصوص المدخلة اتجاهها.",
+      "userText": "نص يكتبه المستخدم",
+      "userTextExample": "هذا الحقل يحدد الاتجاه تلقائيًا — This field uses automatic direction.",
+      "identifiers": "معرّفات مستقلة عن الاتجاه"
+    }
   }
 }

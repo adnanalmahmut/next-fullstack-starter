@@ -53,11 +53,19 @@ function expectArchitectureError(
 }
 
 describe("ESLint architecture contract", () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     eslint = new ESLint({
       cwd: process.cwd(),
     });
-  });
+
+    // Resolving the flat config and building the type-aware program is a
+    // one-time cost paid on the first lint. Warming it up here keeps it out
+    // of whichever case happens to lint first.
+    await eslint.lintText("export const warmUp = true;\n", {
+      filePath: "src/modules/contract_fixture/domain/warm-up.ts",
+      warnIgnored: true,
+    });
+  }, 20_000);
 
   describe("layer boundaries", () => {
     it.each([
