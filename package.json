@@ -18,6 +18,9 @@
     "db:format:check": "prisma format --check",
     "db:generate": "prisma generate",
     "db:validate": "prisma validate",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:status": "prisma migrate status",
     "lint": "eslint --max-warnings=0",
     "architecture:check": "depcruise --config .dependency-cruiser.js --output-type err-long -- src tests",
     "typecheck": "tsc --noEmit",
@@ -35,9 +38,11 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@better-auth/prisma-adapter": "1.6.25",
     "@next/env": "16.2.12",
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
+    "better-auth": "1.6.25",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.28.0",

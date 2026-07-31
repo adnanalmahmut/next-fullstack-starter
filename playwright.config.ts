@@ -1,5 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
+import { TEST_ONLY_BETTER_AUTH_SECRET } from "./tests/test-secrets";
+
 const port = 3100;
 const baseURL = `http://127.0.0.1:${port}`;
 
@@ -43,6 +45,10 @@ export default defineConfig({
       ...process.env,
       APP_ENV: "test",
       NEXT_PUBLIC_APP_URL: baseURL,
+      // The application never falls back to a secret; the test server is
+      // given a test-only value here.
+      BETTER_AUTH_SECRET:
+        process.env.BETTER_AUTH_SECRET ?? TEST_ONLY_BETTER_AUTH_SECRET,
     },
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

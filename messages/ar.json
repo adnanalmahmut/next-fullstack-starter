@@ -10,6 +10,32 @@
     "arabic": "العربية",
     "english": "English"
   },
+  "Auth": {
+    "login": {
+      "metadataTitle": "تسجيل الدخول",
+      "metadataDescription": "سجّل الدخول للوصول إلى حسابك.",
+      "title": "تسجيل الدخول",
+      "description": "أدخل بريدك الإلكتروني وكلمة المرور للمتابعة.",
+      "emailLabel": "البريد الإلكتروني",
+      "emailPlaceholder": "name@example.com",
+      "passwordLabel": "كلمة المرور",
+      "submit": "تسجيل الدخول",
+      "submitting": "جارٍ تسجيل الدخول",
+      "errorTitle": "تعذّر تسجيل الدخول",
+      "invalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+      "unexpectedError": "حدث خطأ غير متوقع. حاول مرة أخرى."
+    },
+    "account": {
+      "metadataTitle": "الحساب",
+      "metadataDescription": "صفحة حساب محمية تتحقق من الجلسة على الخادم.",
+      "title": "حسابك",
+      "description": "تتحقق هذه الصفحة من الجلسة على الخادم في كل طلب.",
+      "signedInAs": "مسجَّل الدخول باسم {name}",
+      "logout": "تسجيل الخروج",
+      "loggingOut": "جارٍ تسجيل الخروج",
+      "logoutError": "تعذّر تسجيل الخروج. حاول مرة أخرى."
+    }
+  },
   "DesignSystem": {
     "eyebrow": "مرجع لبيئة التطوير",
     "title": "أساس نظام التصميم",

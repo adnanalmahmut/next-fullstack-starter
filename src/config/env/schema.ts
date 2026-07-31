@@ -17,10 +17,18 @@ export const databaseEnvironmentSchema = z
   })
   .strict();
 
+/**
+ * Better Auth signs and encrypts with this value. A short secret weakens every
+ * derived signature, so the minimum length is enforced at startup rather than
+ * trusted to deployment discipline.
+ */
+export const authSecretSchema = z.string().min(32);
+
 export const serverEnvironmentSchema = z
   .object({
     APP_ENV: appEnvironmentSchema,
     NODE_ENV: z.enum(["development", "test", "production"]),
+    BETTER_AUTH_SECRET: authSecretSchema,
   })
   .strict();
 

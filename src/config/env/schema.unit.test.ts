@@ -8,12 +8,33 @@ describe("serverEnvironmentSchema", () => {
     const result = serverEnvironmentSchema.parse({
       APP_ENV: "staging",
       NODE_ENV: "production",
+      BETTER_AUTH_SECRET: "unit-test-only-better-auth-secret-value-000000",
     });
 
     expect(result).toEqual({
       APP_ENV: "staging",
       NODE_ENV: "production",
+      BETTER_AUTH_SECRET: "unit-test-only-better-auth-secret-value-000000",
     });
+  });
+
+  it("rejects a missing authentication secret", () => {
+    expect(() =>
+      serverEnvironmentSchema.parse({
+        APP_ENV: "production",
+        NODE_ENV: "production",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects an authentication secret shorter than 32 characters", () => {
+    expect(() =>
+      serverEnvironmentSchema.parse({
+        APP_ENV: "production",
+        NODE_ENV: "production",
+        BETTER_AUTH_SECRET: "too-short",
+      }),
+    ).toThrow();
   });
 
   it("rejects missing server configuration", () => {
@@ -25,6 +46,7 @@ describe("serverEnvironmentSchema", () => {
       serverEnvironmentSchema.parse({
         APP_ENV: "preview",
         NODE_ENV: "production",
+        BETTER_AUTH_SECRET: "unit-test-only-better-auth-secret-value-000000",
       }),
     ).toThrow();
   });
@@ -34,6 +56,7 @@ describe("serverEnvironmentSchema", () => {
       serverEnvironmentSchema.parse({
         APP_ENV: "development",
         NODE_ENV: "development",
+        BETTER_AUTH_SECRET: "unit-test-only-better-auth-secret-value-000000",
         UNDECLARED_VARIABLE: "value",
       }),
     ).toThrow();
@@ -92,6 +115,7 @@ describe("parseEnvironment", () => {
     const result = parseEnvironment("server", serverEnvironmentSchema, {
       APP_ENV: "production",
       NODE_ENV: "production",
+      BETTER_AUTH_SECRET: "unit-test-only-better-auth-secret-value-000000",
     });
 
     expect(result.APP_ENV).toBe("production");

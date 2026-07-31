@@ -471,6 +471,99 @@ describe("ESLint architecture contract", () => {
     });
   });
 
+  describe("authentication boundaries", () => {
+    it.each([
+      {
+        name: "the server instance may hand the shared client to the adapter",
+        filePath: "src/platform/auth/auth.server.ts",
+        code: `
+          import "server-only";
+
+          import { database } from "@/platform/database/index.server";
+          import { serverEnv } from "@/config/env/index.server";
+
+          export const value = [database, serverEnv];
+        `,
+      },
+      {
+        name: "the client entry may use the Better Auth React client",
+        filePath: "src/platform/auth/auth-client.ts",
+        code: `
+          import { createAuthClient } from "better-auth/react";
+
+          export const authClient = createAuthClient();
+        `,
+      },
+    ])("allows: $name", async ({ code, filePath }) => {
+      const messages = await lintArchitecture(code, filePath);
+
+      const layerMessages = messages.filter(
+        ({ ruleId }) => ruleId === layerBoundaryRule,
+      );
+
+      expect(layerMessages).toEqual([]);
+    });
+
+    it.each([
+      {
+        name: "the client entry importing the auth server instance",
+        filePath: "src/platform/auth/auth-client.ts",
+        code: `
+          export { auth } from "@/platform/auth/auth.server";
+        `,
+        message: "Server-only authentication modules must not be imported",
+      },
+      {
+        name: "a presentation component importing the session helper",
+        filePath: "src/platform/auth/presentation/contract-fixture.tsx",
+        code: `
+          "use client";
+
+          export { getCurrentSession } from "@/platform/auth/session.server";
+        `,
+        message: "Server-only authentication modules must not be imported",
+      },
+      {
+        name: "a presentation component importing server environment",
+        filePath: "src/platform/auth/presentation/contract-fixture-env.tsx",
+        code: `
+          "use client";
+
+          export { serverEnv } from "@/config/env/index.server";
+        `,
+        message: "Server environment configuration must not be imported",
+      },
+      {
+        name: "the session helper accessing the database",
+        filePath: "src/platform/auth/contract-fixture-session.ts",
+        code: `
+          export { database } from "@/platform/database/index.server";
+        `,
+        message: "Direct database access is restricted to infrastructure",
+      },
+      {
+        name: "an application route accessing the database",
+        filePath: "src/app/api/contract-fixture/route.ts",
+        code: `
+          export { database } from "@/platform/database/index.server";
+        `,
+        message: "Direct database access is restricted to infrastructure",
+      },
+      {
+        name: "the proxy pipeline reading authentication state",
+        filePath: "src/platform/proxy/contract-fixture-auth.ts",
+        code: `
+          export { auth } from "@/platform/auth/auth.server";
+        `,
+        message: "not an authorization boundary",
+      },
+    ])("rejects: $name", async ({ code, filePath, message }) => {
+      const messages = await lintArchitecture(code, filePath);
+
+      expectArchitectureError(messages, layerBoundaryRule, message);
+    });
+  });
+
   describe("client and server boundaries", () => {
     it.each([
       {

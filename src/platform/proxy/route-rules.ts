@@ -37,4 +37,16 @@ export const applicationRouteRules: readonly RouteRule[] = [
     match: "exact",
     localized: true,
   },
+  {
+    pathname: "/login",
+    area: "auth",
+    match: "exact",
+    localized: true,
+  },
+  {
+    pathname: "/account",
+    area: "front-office",
+    match: "exact",
+    localized: true,
+  },
 ];

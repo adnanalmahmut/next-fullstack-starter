@@ -43,7 +43,8 @@ is how the value reaches server handling.
 - Keep the classifier pure. It must not read cookies, produce a response, or
   decide authorization.
 - Do not read a session cookie, resolve an actor, compare roles, or return `401`
-  or `403` from here.
+  or `403` from here. Authentication lives in `src/platform/auth`, and the
+  `/login` and `/account` rules are route metadata only.
 - Reuse `REQUEST_ID_HEADER` and `resolveRequestId` from
   `@/platform/observability/request-id.server` instead of defining a second
   contract.

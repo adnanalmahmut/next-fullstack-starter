@@ -422,8 +422,12 @@ describe("proxy route rules", () => {
 
     expect(routePathnames.sort()).toEqual([
       "/",
+      "/account",
+      "/api/auth/[...all]",
+      "/api/diagnostics/auth-session",
       "/api/diagnostics/request-context",
       "/design-system",
+      "/login",
     ]);
 
     for (const pathname of routePathnames) {
@@ -471,9 +475,14 @@ describe("proxy route rules", () => {
       applicationRouteRules.map((rule) => rule.area),
     );
 
-    expect([...declaredAreas].sort()).toEqual(["api", "public"]);
-    expect(classify("/ar/sign-in")).toBe("unknown");
-    expect(classify("/ar/account")).toBe("unknown");
+    expect([...declaredAreas].sort()).toEqual([
+      "api",
+      "auth",
+      "front-office",
+      "public",
+    ]);
+    expect(classify("/ar/register")).toBe("unknown");
     expect(classify("/ar/admin")).toBe("unknown");
+    expect(classify("/ar/reports")).toBe("unknown");
   });
 });

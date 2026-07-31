@@ -42,6 +42,9 @@ jobs:
       APP_ENV: test
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/next_fullstack_starter?schema=public
       NEXT_PUBLIC_APP_URL: http://127.0.0.1:3100
+      # Test-only value for an ephemeral CI database. Never used for a deployed
+      # environment, and the application has no runtime fallback.
+      BETTER_AUTH_SECRET: test-only-better-auth-secret-do-not-use-in-production
 
     steps:
       - name: Checkout repository
@@ -61,6 +64,11 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # Integration tests run inside `pnpm verify`, so the schema must exist
+      # before it. `migrate deploy` never resets or pushes.
+      - name: Apply Prisma migrations
+        run: pnpm db:migrate:deploy
 
       - name: Verify project
         run: pnpm verify

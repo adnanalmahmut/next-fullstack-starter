@@ -4,6 +4,7 @@ import { serverEnvironmentSchema, type ServerEnvironment } from "./schema";
 type ServerEnvironmentSource = {
   APP_ENV?: string;
   NODE_ENV?: string;
+  BETTER_AUTH_SECRET?: string;
 };
 
 export function readServerEnvironment(
@@ -12,5 +13,6 @@ export function readServerEnvironment(
   return parseEnvironment("server", serverEnvironmentSchema, {
     APP_ENV: source.APP_ENV,
     NODE_ENV: source.NODE_ENV,
+    BETTER_AUTH_SECRET: source.BETTER_AUTH_SECRET,
   });
 }

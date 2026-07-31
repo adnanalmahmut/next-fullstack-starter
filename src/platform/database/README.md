@@ -70,10 +70,18 @@ Future module-owned schema files can be grouped under:
 prisma/schema
 ```
 
-Migrations will live under:
+Migrations live under:
 
 ```text
 prisma/migrations
 ```
+
+Apply them with `pnpm db:migrate:deploy`. `prisma db push` and
+`prisma migrate reset` are not used, and migrations are reviewed before merge.
+
+Better Auth receives the same shared client through its Prisma adapter and owns
+the technical identity models in `prisma/identity.prisma`. Application code must
+not query those models directly; see
+[`docs/architecture/authentication-foundation.md`](../../../docs/architecture/authentication-foundation.md).
 
 Business models must be added with the business module that owns them rather than as speculative infrastructure.
