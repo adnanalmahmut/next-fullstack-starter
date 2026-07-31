@@ -10,6 +10,32 @@
     "arabic": "العربية",
     "english": "English"
   },
+  "Auth": {
+    "login": {
+      "metadataTitle": "Sign in",
+      "metadataDescription": "Sign in to reach your account.",
+      "title": "Sign in",
+      "description": "Enter your email address and password to continue.",
+      "emailLabel": "Email address",
+      "emailPlaceholder": "name@example.com",
+      "passwordLabel": "Password",
+      "submit": "Sign in",
+      "submitting": "Signing in",
+      "errorTitle": "Unable to sign in",
+      "invalidCredentials": "The email address or password is incorrect.",
+      "unexpectedError": "Something went wrong. Please try again."
+    },
+    "account": {
+      "metadataTitle": "Account",
+      "metadataDescription": "A protected account page that validates the session on the server.",
+      "title": "Your account",
+      "description": "This page validates the session on the server for every request.",
+      "signedInAs": "Signed in as {name}",
+      "logout": "Sign out",
+      "loggingOut": "Signing out",
+      "logoutError": "Unable to sign out. Please try again."
+    }
+  },
   "DesignSystem": {
     "eyebrow": "Development reference",
     "title": "Design system foundation",

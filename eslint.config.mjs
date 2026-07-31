@@ -38,6 +38,16 @@ const restrictedImportPatterns = {
     regex: "^better-auth(?:/|$)",
     message: "Better Auth must not be accessed from this architectural layer.",
   },
+  authServer: {
+    regex: "^@/platform/auth/(?:auth|session)\\.server(?:/|$)",
+    message:
+      "Server-only authentication modules must not be imported by this layer.",
+  },
+  serverEnvironment: {
+    regex: "^@/config/env/index\\.server(?:/|$)",
+    message:
+      "Server environment configuration must not be imported by this layer.",
+  },
   serverOnly: {
     regex: "^server-only$",
     message: "Server-only modules must not be imported by this layer.",
@@ -114,6 +124,84 @@ const eslintConfig = defineConfig([
           message:
             "The proxy request pipeline must not reach business modules or UI code through relative imports.",
         },
+        {
+          regex: "^@/platform/auth(?:/|$)",
+          message:
+            "The proxy request pipeline is not an authorization boundary and must not read authentication state.",
+        },
+      ),
+    },
+  },
+  {
+    name: "architecture/auth-platform",
+    files: ["src/platform/auth/**/*.{ts,tsx}"],
+    // The Better Auth server instance is the single legal database consumer in
+    // this area: it hands the shared client to the Prisma adapter.
+    ignores: ["src/platform/auth/auth.server.ts"],
+    rules: {
+      "no-restricted-imports": restrictImports(
+        restrictedImportPatterns.prisma,
+        restrictedImportPatterns.database,
+        restrictedImportPatterns.postgres,
+        restrictedImportPatterns.redis,
+        restrictedImportPatterns.queue,
+        {
+          regex: "^@/modules(?:/|$)",
+          message:
+            "Authentication infrastructure must not depend on business modules.",
+        },
+      ),
+    },
+  },
+  {
+    name: "architecture/auth-server-instance",
+    files: ["src/platform/auth/auth.server.ts"],
+    rules: {
+      "no-restricted-imports": restrictImports(
+        restrictedImportPatterns.prisma,
+        restrictedImportPatterns.postgres,
+        restrictedImportPatterns.redis,
+        restrictedImportPatterns.queue,
+        restrictedImportPatterns.react,
+        {
+          regex: "^@/modules(?:/|$)",
+          message:
+            "Authentication infrastructure must not depend on business modules.",
+        },
+        {
+          regex: "^@/ui(?:/|$)",
+          message: "Authentication infrastructure must not depend on UI code.",
+        },
+      ),
+    },
+  },
+  {
+    name: "architecture/auth-client-boundary",
+    files: [
+      "src/platform/auth/auth-client.ts",
+      "src/platform/auth/presentation/**/*.{ts,tsx}",
+    ],
+    rules: {
+      "no-restricted-imports": restrictImports(
+        restrictedImportPatterns.prisma,
+        restrictedImportPatterns.database,
+        restrictedImportPatterns.postgres,
+        restrictedImportPatterns.serverOnly,
+        restrictedImportPatterns.authServer,
+        restrictedImportPatterns.serverEnvironment,
+      ),
+    },
+  },
+  {
+    name: "architecture/app-routing",
+    files: ["src/app/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": restrictImports(
+        restrictedImportPatterns.prisma,
+        restrictedImportPatterns.database,
+        restrictedImportPatterns.postgres,
+        restrictedImportPatterns.redis,
+        restrictedImportPatterns.queue,
       ),
     },
   },

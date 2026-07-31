@@ -59,3 +59,20 @@ cache, a queue, or a business module.
 Implementation rules are documented in
 [`proxy/README.md`](./proxy/README.md) and the architectural policy in
 [`docs/architecture/proxy-request-pipeline.md`](../../docs/architecture/proxy-request-pipeline.md).
+
+## Authentication
+
+Better Auth is configured under `src/platform/auth`.
+
+- `auth.server.ts` builds the server instance on the shared Prisma client.
+- `session.server.ts` exposes the server-side session reads.
+- `auth-client.ts` is the client-safe entry used only for sign-in and sign-out.
+- `access-control.ts` holds the Admin plugin statements and the two base roles.
+- `registration-policy.ts` and `return-to.ts` are pure, testable policies.
+
+Sessions are database-backed and validated on the server for every read. The
+platform is not an authorization boundary by itself.
+
+Implementation rules are documented in [`auth/README.md`](./auth/README.md) and
+the architectural policy in
+[`docs/architecture/authentication-foundation.md`](../../docs/architecture/authentication-foundation.md).

@@ -58,6 +58,14 @@ module.exports = {
     tsConfig: {
       fileName: "tsconfig.json",
     },
+    enhancedResolveOptions: {
+      // Resolve package `exports` subpaths the way the bundler and TypeScript
+      // do, so entries such as `better-auth/plugins/admin` are not reported as
+      // unresolvable.
+      exportsFields: ["exports"],
+      conditionNames: ["import", "require", "node", "default", "types"],
+      mainFields: ["module", "main", "types", "typings"],
+    },
     tsPreCompilationDeps: true,
     detectProcessBuiltinModuleCalls: true,
     skipAnalysisNotInRules: true,

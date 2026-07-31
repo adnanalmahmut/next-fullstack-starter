@@ -131,6 +131,26 @@ pages, Route Handlers, Server Actions, and use cases must authenticate and
 authorize independently. The detailed policy is defined in
 [`proxy-request-pipeline.md`](./proxy-request-pipeline.md).
 
+### Authentication
+
+```text
+src/platform/auth
+src/app/api/auth/[...all]
+prisma/identity.prisma
+```
+
+Responsibilities:
+
+- Configure the Better Auth server instance on the shared Prisma client.
+- Apply the environment-derived registration policy.
+- Provide server-side session reads for Server Components and Route Handlers.
+- Own the technical identity models and their migration.
+- Keep the Admin plugin configured as a technical foundation only.
+
+Authentication is not delegated to the proxy or to client state. The detailed
+policy is defined in
+[`authentication-foundation.md`](./authentication-foundation.md).
+
 ### Design system
 
 ```text
@@ -265,6 +285,7 @@ pnpm verify
 - [Error Handling Contracts](./error-handling.md)
 - [Observability Foundation](./observability.md)
 - [Proxy Request Pipeline](./proxy-request-pipeline.md)
+- [Authentication Foundation](./authentication-foundation.md)
 - [Design System](../design-system/README.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)
