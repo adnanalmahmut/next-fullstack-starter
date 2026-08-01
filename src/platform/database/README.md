@@ -80,8 +80,15 @@ Apply them with `pnpm db:migrate:deploy`. `prisma db push` and
 `prisma migrate reset` are not used, and migrations are reviewed before merge.
 
 Better Auth receives the same shared client through its Prisma adapter and owns
-the technical identity models in `prisma/identity.prisma`. Application code must
-not query those models directly; see
+the technical identity models in `prisma/identity.prisma`. Every write to those
+models goes through Better Auth. The only direct reads are two bounded queries in
+`src/platform/auth/authorization/identity-read.repository.server.ts`, which the
+resource policies need; no other code may query them. See
 [`docs/architecture/authentication-foundation.md`](../../../docs/architecture/authentication-foundation.md).
+
+`prisma/authorization.prisma` holds the append-only authorization audit trail,
+owned by `src/platform/auth/authorization`. It has no foreign key to the identity
+models, so a record outlives what it refers to; see
+[`docs/architecture/authorization-admin-access-control.md`](../../../docs/architecture/authorization-admin-access-control.md).
 
 Business models must be added with the business module that owns them rather than as speculative infrastructure.

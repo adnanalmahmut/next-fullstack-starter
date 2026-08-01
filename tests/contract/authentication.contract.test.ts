@@ -5,13 +5,16 @@ import { describe, expect, it } from "vitest";
 
 import { isAuthSessionDiagnosticEnabled } from "@/app/api/diagnostics/auth-session/auth-session-access";
 import {
+  accessControl,
+  authorizationRoles,
+  userRole,
+} from "@/platform/auth/access-control";
+import {
   ADMIN_ROLE,
   ADMIN_ROLES,
   DEFAULT_ROLE,
   USER_ROLE,
-  accessControl,
-  authorizationRoles,
-} from "@/platform/auth/access-control";
+} from "@/platform/auth/authorization/role";
 import { isEmailRegistrationEnabled } from "@/platform/auth/registration-policy";
 import { applicationRouteRules } from "@/platform/proxy/route-rules";
 
@@ -63,17 +66,21 @@ const authClientCode = stripComments(read(`${authRoot}/auth-client.ts`));
 const sessionCode = stripComments(read(`${authRoot}/session.server.ts`));
 const apiRouteSource = read("src/app/api/auth/[...all]/route.ts");
 
+const authenticationMigrationName =
+  "20260731201511_establish_authentication_foundation";
+
 const migrationDirectories = readdirSync(migrationsRoot, {
   withFileTypes: true,
 })
   .filter((entry) => entry.isDirectory())
   .map((entry) => entry.name);
 
-const migrationSql = migrationDirectories
-  .map((name) =>
-    readFileSync(resolve(migrationsRoot, name, "migration.sql"), "utf8"),
-  )
-  .join("\n");
+// Later features own their own migrations, so these assertions read the
+// authentication one alone.
+const migrationSql = readFileSync(
+  resolve(migrationsRoot, authenticationMigrationName, "migration.sql"),
+  "utf8",
+);
 
 const packageJson = JSON.parse(read("package.json")) as {
   dependencies: Record<string, string>;
@@ -252,20 +259,32 @@ describe("admin plugin foundation", () => {
     expect(Object.keys(authorizationRoles).sort()).toEqual(["admin", "user"]);
   });
 
-  it("uses the plugin statements without inventing business resources", () => {
-    expect(Object.keys(accessControl.statements).sort()).toEqual([
-      "session",
-      "user",
+  it("keeps the plugin statements and invents no business resource", () => {
+    const resources = Object.keys(accessControl.statements).sort();
+
+    // The plugin's own resources stay untouched, and every added resource is an
+    // application capability in the `identity` module. A business resource such
+    // as a catalog or an order belongs to the module that owns it.
+    expect(resources).toContain("user");
+    expect(resources).toContain("session");
+    expect(
+      resources.filter(
+        (resource) => resource !== "user" && resource !== "session",
+      ),
+    ).toEqual([
+      "identity.admin",
+      "identity.audit",
+      "identity.session",
+      "identity.user",
     ]);
   });
 
   it("grants the default role no administrative capability", () => {
-    const userRole = authorizationRoles[USER_ROLE];
+    expect(authorizationRoles[USER_ROLE]).toBe(userRole);
 
-    expect(userRole?.statements).toEqual({
-      user: [],
-      session: [],
-    });
+    for (const [resource, actions] of Object.entries(userRole.statements)) {
+      expect(actions, resource).toEqual([]);
+    }
   });
 
   it("wires the plugin through the centralized access control", () => {
@@ -273,24 +292,39 @@ describe("admin plugin foundation", () => {
     expect(authServerCode).toContain("ac: accessControl");
     expect(authServerCode).toContain("roles: authorizationRoles");
     expect(authServerCode).toContain("defaultRole: DEFAULT_ROLE");
-    expect(authServerCode).toContain("adminRoles: ADMIN_ROLES");
+    expect(authServerCode).toContain("adminRoles: [...ADMIN_ROLES]");
   });
 
-  it("adds no administrative interface or user management", () => {
-    const appFiles = collectFiles(
-      resolve(projectRoot, "src/app"),
-      (name) => name.endsWith(".ts") || name.endsWith(".tsx"),
-    ).map((filePath) => relative(projectRoot, filePath).replaceAll("\\", "/"));
-
-    expect(appFiles.filter((path) => path.includes("/admin"))).toEqual([]);
-
+  it("adds no impersonation and no administrative client plugin", () => {
     for (const { path, code } of authSourceFiles) {
       expect(code.includes("adminClient"), path).toBe(false);
       expect(code.includes("impersonate"), path).toBe(false);
     }
   });
 
-  it("spreads no permission check into application pages", () => {
+  it("implements no user lifecycle management", () => {
+    const appFiles = collectFiles(
+      resolve(projectRoot, "src/app"),
+      (name) => name.endsWith(".ts") || name.endsWith(".tsx"),
+    ).map((filePath) => relative(projectRoot, filePath).replaceAll("\\", "/"));
+
+    for (const fragment of [
+      "create-user",
+      "remove-user",
+      "delete-user",
+      "ban",
+      "impersonate",
+      "set-password",
+      "set-email",
+    ]) {
+      expect(
+        appFiles.filter((path) => path.includes(fragment)),
+        fragment,
+      ).toEqual([]);
+    }
+  });
+
+  it("spreads no permission check into non-administrative pages", () => {
     const pageFiles = collectFiles(
       resolve(projectRoot, "src/app"),
       (name) => name === "page.tsx",
@@ -300,7 +334,13 @@ describe("admin plugin foundation", () => {
     }));
 
     for (const { path, code } of pageFiles) {
-      expect(/\brole\s*===/.test(code), path).toBe(false);
+      // A role comparison is never acceptable, in any page.
+      expect(/\brole\s*[=!]==/.test(code), path).toBe(false);
+
+      if (path.includes("/admin")) {
+        continue;
+      }
+
       expect(code.includes("hasPermission"), path).toBe(false);
       expect(code.includes("requirePermission"), path).toBe(false);
     }
@@ -416,10 +456,11 @@ describe("authentication routes", () => {
 });
 
 describe("authentication migration", () => {
-  it("contains exactly one reviewed migration", () => {
-    expect(migrationDirectories).toEqual([
-      "20260731201511_establish_authentication_foundation",
-    ]);
+  it("keeps exactly one reviewed authentication migration, applied first", () => {
+    expect(
+      migrationDirectories.filter((name) => name.includes("authentication")),
+    ).toEqual([authenticationMigrationName]);
+    expect(migrationDirectories[0]).toBe(authenticationMigrationName);
   });
 
   it("uses no destructive statement", () => {

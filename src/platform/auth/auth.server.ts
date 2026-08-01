@@ -8,12 +8,9 @@ import { publicEnv } from "@/config/env/index.client";
 import { serverEnv } from "@/config/env/index.server";
 import { database } from "@/platform/database/index.server";
 
-import {
-  ADMIN_ROLES,
-  DEFAULT_ROLE,
-  accessControl,
-  authorizationRoles,
-} from "./access-control";
+import { accessControl, authorizationRoles } from "./access-control";
+import { authorizationAdminHooks } from "./authorization/admin-guard.server";
+import { ADMIN_ROLES, DEFAULT_ROLE } from "./authorization/role";
 import { isEmailRegistrationEnabled } from "./registration-policy";
 
 /**
@@ -64,10 +61,15 @@ export const auth = betterAuth({
     useSecureCookies: serverEnv.NODE_ENV === "production",
   },
 
+  // The Admin plugin endpoints are reachable directly under `/api/auth`, so the
+  // application's capability checks, resource policies, and audit records are
+  // applied here rather than only in the application's own routes.
+  hooks: authorizationAdminHooks,
+
   plugins: [
     admin({
       defaultRole: DEFAULT_ROLE,
-      adminRoles: ADMIN_ROLES,
+      adminRoles: [...ADMIN_ROLES],
       ac: accessControl,
       roles: authorizationRoles,
     }),

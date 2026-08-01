@@ -36,6 +36,70 @@
       "logoutError": "تعذّر تسجيل الخروج. حاول مرة أخرى."
     }
   },
+  "Authorization": {
+    "forbiddenTitle": "الوصول مقيَّد",
+    "forbiddenDescription": "صلاحياتك الحالية لا تتضمن منطقة الإدارة.",
+    "roles": {
+      "user": "مستخدم",
+      "admin": "مدير"
+    }
+  },
+  "Admin": {
+    "navigationLabel": "الإدارة",
+    "sections": {
+      "dashboard": "نظرة عامة",
+      "users": "المستخدمون",
+      "audit": "سجل التدقيق"
+    },
+    "dashboard": {
+      "metadataTitle": "الإدارة",
+      "metadataDescription": "منطقة إدارة محمية تتحقق من صلاحية كل طلب على الخادم.",
+      "title": "الإدارة",
+      "description": "تتحقق هذه المنطقة من صلاحية كل طلب على الخادم عبر صلاحية محددة، لا عبر اسم دور.",
+      "supportedTitle": "العمليات المدعومة",
+      "supportedDescription": "قراءة المستخدمين، وتغيير دور مستخدم، وإبطال جلسات مستخدم، وقراءة سجل التدقيق.",
+      "unsupportedTitle": "غير متاح هنا",
+      "unsupportedDescription": "إنشاء مستخدم أو حذفه أو حظره أو انتحال هويته، وتغيير كلمة المرور أو البريد الإلكتروني."
+    },
+    "users": {
+      "metadataTitle": "المستخدمون",
+      "metadataDescription": "قائمة مستخدمين محمية للمديرين.",
+      "title": "المستخدمون",
+      "description": "قائمة محدودة تبدأ بالأحدث وتعرض الحقول التي يحتاجها المدير فقط.",
+      "caption": "المستخدمون، الأحدث أولًا",
+      "nameHeader": "الاسم",
+      "emailHeader": "البريد الإلكتروني",
+      "rolesHeader": "الأدوار",
+      "createdAtHeader": "تاريخ الإنشاء",
+      "noRole": "الافتراضي",
+      "emptyTitle": "لا مستخدمين للعرض",
+      "emptyDescription": "لا يوجد مستخدم مطابق في هذه الصفحة.",
+      "total": "{count, plural, =0 {لا مستخدمين} one {مستخدم واحد} two {مستخدمان} few {# مستخدمين} many {# مستخدمًا} other {# مستخدم}} في الإجمالي"
+    },
+    "audit": {
+      "metadataTitle": "سجل التدقيق",
+      "metadataDescription": "سجل محمي للتغييرات الإدارية المكتملة.",
+      "title": "سجل التدقيق",
+      "description": "أحدث التغييرات الإدارية المكتملة، الأحدث أولًا.",
+      "caption": "التغييرات الإدارية، الأحدث أولًا",
+      "occurredAtHeader": "الوقت",
+      "actionHeader": "العملية",
+      "actorHeader": "المنفِّذ",
+      "targetHeader": "الهدف",
+      "detailHeader": "التفصيل",
+      "noDetail": "—",
+      "emptyTitle": "لا سجلات بعد",
+      "emptyDescription": "يظهر سجل هنا بعد اكتمال تغيير إداري مدعوم.",
+      "actions": {
+        "roleSet": "تغيير الدور",
+        "sessionsRevoked": "إبطال الجلسات"
+      },
+      "detail": {
+        "role": "الدور الجديد: {role}",
+        "scope": "جميع الجلسات"
+      }
+    }
+  },
   "DesignSystem": {
     "eyebrow": "مرجع لبيئة التطوير",
     "title": "أساس نظام التصميم",

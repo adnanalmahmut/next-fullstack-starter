@@ -133,11 +133,32 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    name: "architecture/authorization-decisions",
+    files: ["src/**/*.{ts,tsx}"],
+    // Role names may only be named where roles are defined, where a stored role
+    // is normalized, and where the last-administrator policy reasons about them.
+    ignores: [
+      "src/platform/auth/access-control.ts",
+      "src/platform/auth/authorization/role.ts",
+      "src/platform/auth/authorization/policies/*.ts",
+      "src/**/*.{test,spec}.{ts,tsx}",
+    ],
+    rules: {
+      "architecture/no-role-comparison": "error",
+    },
+  },
+  {
     name: "architecture/auth-platform",
     files: ["src/platform/auth/**/*.{ts,tsx}"],
     // The Better Auth server instance is the single legal database consumer in
-    // this area: it hands the shared client to the Prisma adapter.
-    ignores: ["src/platform/auth/auth.server.ts"],
+    // this area: it hands the shared client to the Prisma adapter. The two
+    // repositories are the area's own data-access points and are restricted
+    // separately.
+    ignores: [
+      "src/platform/auth/auth.server.ts",
+      "src/platform/auth/authorization/audit/audit-repository.server.ts",
+      "src/platform/auth/authorization/identity-read.repository.server.ts",
+    ],
     rules: {
       "no-restricted-imports": restrictImports(
         restrictedImportPatterns.prisma,
@@ -171,6 +192,34 @@ const eslintConfig = defineConfig([
         {
           regex: "^@/ui(?:/|$)",
           message: "Authentication infrastructure must not depend on UI code.",
+        },
+      ),
+    },
+  },
+  {
+    name: "architecture/auth-repositories",
+    files: [
+      "src/platform/auth/authorization/audit/audit-repository.server.ts",
+      "src/platform/auth/authorization/identity-read.repository.server.ts",
+    ],
+    // Data access is the point of these two files, so Prisma is allowed. Nothing
+    // else is: they must not reach routing, UI, translations, or another
+    // infrastructure client.
+    rules: {
+      "no-restricted-imports": restrictImports(
+        restrictedImportPatterns.react,
+        restrictedImportPatterns.redis,
+        restrictedImportPatterns.queue,
+        restrictedImportPatterns.translations,
+        {
+          regex: "^@/(?:app|ui)(?:/|$)",
+          message:
+            "A repository must not depend on application routing or UI code.",
+        },
+        {
+          regex: "^@/modules(?:/|$)",
+          message:
+            "Authentication infrastructure must not depend on business modules.",
         },
       ),
     },

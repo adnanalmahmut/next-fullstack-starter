@@ -305,6 +305,91 @@ const noClientServerBoundariesRule = {
   },
 };
 
+/**
+ * The role names an authorization decision must never be based on.
+ *
+ * The list mirrors `AUTHORIZATION_ROLE_NAMES` in
+ * `src/platform/auth/authorization/role.ts`. A contract test asserts the two stay
+ * in step, because a role added there without being added here would silently
+ * stop being caught.
+ */
+export const ROLE_LITERALS = ["user", "admin"];
+
+const roleComparisonCallees = new Set([
+  "includes",
+  "indexOf",
+  "some",
+  "startsWith",
+  "endsWith",
+]);
+
+const equalityOperators = new Set(["==", "===", "!=", "!=="]);
+
+function isRoleLiteral(node) {
+  return (
+    node?.type === "Literal" &&
+    typeof node.value === "string" &&
+    ROLE_LITERALS.includes(node.value)
+  );
+}
+
+const noRoleComparisonRule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Prevent authorization decisions based on a role name instead of a capability permission.",
+    },
+    schema: [],
+    messages: {
+      roleComparison:
+        'Do not decide access by comparing the role "{{role}}". Require a capability permission through the centralized authorization helpers.',
+    },
+  },
+
+  create(context) {
+    function report(node) {
+      context.report({
+        node,
+        messageId: "roleComparison",
+        data: {
+          role: node.value,
+        },
+      });
+    }
+
+    return {
+      BinaryExpression(node) {
+        if (!equalityOperators.has(node.operator)) {
+          return;
+        }
+
+        for (const side of [node.left, node.right]) {
+          if (isRoleLiteral(side)) {
+            report(side);
+          }
+        }
+      },
+
+      CallExpression(node) {
+        if (
+          node.callee.type !== "MemberExpression" ||
+          getMemberPropertyName(node.callee) === null ||
+          !roleComparisonCallees.has(getMemberPropertyName(node.callee))
+        ) {
+          return;
+        }
+
+        for (const argument of node.arguments) {
+          if (isRoleLiteral(argument)) {
+            report(argument);
+          }
+        }
+      },
+    };
+  },
+};
+
 const architecturePlugin = {
   meta: {
     name: "next-fullstack-architecture",
@@ -313,6 +398,7 @@ const architecturePlugin = {
 
   rules: {
     "no-client-server-boundaries": noClientServerBoundariesRule,
+    "no-role-comparison": noRoleComparisonRule,
     "require-server-only": requireServerOnlyRule,
   },
 };

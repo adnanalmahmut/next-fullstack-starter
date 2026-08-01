@@ -9,12 +9,14 @@ const layerBoundaryRule = "no-restricted-imports";
 const layerGlobalRule = "no-restricted-globals";
 const clientBoundaryRule = "architecture/no-client-server-boundaries";
 const serverMarkerRule = "architecture/require-server-only";
+const roleComparisonRule = "architecture/no-role-comparison";
 
 const architectureRuleIds = new Set([
   layerBoundaryRule,
   layerGlobalRule,
   clientBoundaryRule,
   serverMarkerRule,
+  roleComparisonRule,
 ]);
 
 let eslint: ESLint;
@@ -561,6 +563,230 @@ describe("ESLint architecture contract", () => {
       const messages = await lintArchitecture(code, filePath);
 
       expectArchitectureError(messages, layerBoundaryRule, message);
+    });
+  });
+
+  describe("authorization boundaries", () => {
+    it.each([
+      {
+        name: "the audit repository may access the database",
+        filePath:
+          "src/platform/auth/authorization/audit/audit-repository.server.ts",
+        code: `
+          import "server-only";
+
+          import { database } from "@/platform/database/index.server";
+
+          export const value = database;
+        `,
+      },
+      {
+        name: "the identity read repository may access the database",
+        filePath:
+          "src/platform/auth/authorization/identity-read.repository.server.ts",
+        code: `
+          import "server-only";
+
+          import { database } from "@/platform/database/index.server";
+
+          export const value = database;
+        `,
+      },
+    ])("allows: $name", async ({ code, filePath }) => {
+      const messages = await lintArchitecture(code, filePath);
+
+      expect(
+        messages.filter(({ ruleId }) => ruleId === layerBoundaryRule),
+      ).toEqual([]);
+    });
+
+    it.each([
+      {
+        name: "an authorization module reaching the database directly",
+        filePath:
+          "src/platform/auth/authorization/contract-fixture-database.ts",
+        code: `
+          export { database } from "@/platform/database/index.server";
+        `,
+        message: "Direct database access is restricted to infrastructure",
+      },
+      {
+        name: "a repository reaching application routing",
+        filePath:
+          "src/platform/auth/authorization/audit/audit-repository.server.ts",
+        code: `
+          import "server-only";
+
+          export { GET } from "@/app/api/admin/audit/route";
+        `,
+        message: "must not depend on application routing",
+      },
+      {
+        name: "an administration route importing the database",
+        filePath: "src/app/api/admin/contract-fixture/route.ts",
+        code: `
+          export { database } from "@/platform/database/index.server";
+        `,
+        message: "Direct database access is restricted to infrastructure",
+      },
+    ])("rejects: $name", async ({ code, filePath, message }) => {
+      const messages = await lintArchitecture(code, filePath);
+
+      expectArchitectureError(messages, layerBoundaryRule, message);
+    });
+
+    it.each([
+      {
+        name: "an equality comparison in a page",
+        filePath: "src/app/[locale]/(admin)/admin/contract-fixture/page.tsx",
+        code: `
+          export function decide(role: string) {
+            return role === "admin";
+          }
+        `,
+      },
+      {
+        name: "a reversed equality comparison",
+        filePath: "src/platform/auth/authorization/contract-fixture-a.ts",
+        code: `
+          export function decide(role: string) {
+            return "admin" !== role;
+          }
+        `,
+      },
+      {
+        name: "a loose equality comparison",
+        filePath: "src/platform/auth/authorization/contract-fixture-b.ts",
+        code: `
+          export function decide(role: unknown) {
+            return role == "user";
+          }
+        `,
+      },
+      {
+        name: "a membership check on a role list",
+        filePath: "src/platform/auth/authorization/contract-fixture-c.ts",
+        code: `
+          export function decide(roles: readonly string[]) {
+            return roles.includes("admin");
+          }
+        `,
+      },
+      {
+        name: "a predicate over a role list",
+        filePath: "src/platform/auth/authorization/contract-fixture-d.ts",
+        code: `
+          export function decide(roles: readonly string[]) {
+            return roles.some((role) => role === "admin");
+          }
+        `,
+      },
+      {
+        name: "a prefix check on a stored role column",
+        filePath: "src/platform/auth/authorization/contract-fixture-e.ts",
+        code: `
+          export function decide(role: string) {
+            return role.startsWith("admin");
+          }
+        `,
+      },
+      {
+        name: "a comparison inside a Route Handler",
+        filePath: "src/app/api/admin/contract-fixture-role/route.ts",
+        code: `
+          export function GET() {
+            const role = "user";
+
+            return Response.json({ ok: role === "admin" });
+          }
+        `,
+      },
+      {
+        name: "a comparison inside the proxy pipeline",
+        filePath: "src/platform/proxy/contract-fixture-role.ts",
+        code: `
+          export function decide(role: string) {
+            return role === "admin";
+          }
+        `,
+      },
+    ])(
+      "rejects a distributed role decision: $name",
+      async ({ code, filePath }) => {
+        const messages = await lintArchitecture(code, filePath);
+
+        expectArchitectureError(
+          messages,
+          roleComparisonRule,
+          "Require a capability permission",
+        );
+      },
+    );
+
+    it.each([
+      {
+        name: "the role module may name a role",
+        filePath: "src/platform/auth/authorization/role.ts",
+        code: `
+          export const ADMIN_ROLE = "admin";
+
+          export function isAdminRole(value: unknown) {
+            return value === "admin";
+          }
+        `,
+      },
+      {
+        name: "access control may name a role",
+        filePath: "src/platform/auth/access-control.ts",
+        code: `
+          export function decide(role: string) {
+            return role === "admin";
+          }
+        `,
+      },
+      {
+        name: "a resource policy may reason about the admin role",
+        filePath:
+          "src/platform/auth/authorization/policies/contract-fixture.policy.ts",
+        code: `
+          export function decide(roles: readonly string[]) {
+            return roles.includes("admin");
+          }
+        `,
+      },
+      {
+        name: "a test may assert on a role name",
+        filePath:
+          "src/platform/auth/authorization/contract-fixture.unit.test.ts",
+        code: `
+          export function decide(role: string) {
+            return role === "admin";
+          }
+        `,
+      },
+      {
+        name: "a role name may be an object key",
+        filePath: "src/platform/auth/authorization/contract-fixture-key.ts",
+        code: `
+          export const labels: Record<string, string> = {
+            admin: "Administrator",
+            user: "User",
+          };
+        `,
+      },
+      {
+        name: "a role name may appear in an allowlist array",
+        filePath: "src/platform/auth/authorization/contract-fixture-list.ts",
+        code: `
+          export const roles = ["user", "admin"] as const;
+        `,
+      },
+    ])("allows a legitimate role name: $name", async ({ code, filePath }) => {
+      const messages = await lintArchitecture(code, filePath);
+
+      expect(
+        messages.filter(({ ruleId }) => ruleId === roleComparisonRule),
+      ).toEqual([]);
     });
   });
 

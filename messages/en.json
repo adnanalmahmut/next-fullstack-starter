@@ -36,6 +36,70 @@
       "logoutError": "Unable to sign out. Please try again."
     }
   },
+  "Authorization": {
+    "forbiddenTitle": "Access is restricted",
+    "forbiddenDescription": "Your current access does not include the administration area.",
+    "roles": {
+      "user": "User",
+      "admin": "Administrator"
+    }
+  },
+  "Admin": {
+    "navigationLabel": "Administration",
+    "sections": {
+      "dashboard": "Overview",
+      "users": "Users",
+      "audit": "Audit trail"
+    },
+    "dashboard": {
+      "metadataTitle": "Administration",
+      "metadataDescription": "A protected administration area that authorizes every request on the server.",
+      "title": "Administration",
+      "description": "This area authorizes every request on the server through a capability, never through a role name.",
+      "supportedTitle": "Supported operations",
+      "supportedDescription": "Reading users, changing a user role, revoking a user's sessions, and reading the audit trail.",
+      "unsupportedTitle": "Not available here",
+      "unsupportedDescription": "Creating, deleting, banning, or impersonating a user, and changing a password or an email address."
+    },
+    "users": {
+      "metadataTitle": "Users",
+      "metadataDescription": "A protected list of users for administrators.",
+      "title": "Users",
+      "description": "A bounded, newest-first list showing only the fields an administrator needs.",
+      "caption": "Users, newest first",
+      "nameHeader": "Name",
+      "emailHeader": "Email address",
+      "rolesHeader": "Roles",
+      "createdAtHeader": "Created",
+      "noRole": "Default",
+      "emptyTitle": "No users to show",
+      "emptyDescription": "No user matches the current page.",
+      "total": "{count, plural, =0 {No users} one {# user} other {# users}} in total"
+    },
+    "audit": {
+      "metadataTitle": "Audit trail",
+      "metadataDescription": "A protected record of completed administrative changes.",
+      "title": "Audit trail",
+      "description": "The most recent completed administrative changes, newest first.",
+      "caption": "Administrative changes, newest first",
+      "occurredAtHeader": "When",
+      "actionHeader": "Action",
+      "actorHeader": "Actor",
+      "targetHeader": "Target",
+      "detailHeader": "Detail",
+      "noDetail": "—",
+      "emptyTitle": "No records yet",
+      "emptyDescription": "A record appears here after a supported administrative change completes.",
+      "actions": {
+        "roleSet": "Role changed",
+        "sessionsRevoked": "Sessions revoked"
+      },
+      "detail": {
+        "role": "New role: {role}",
+        "scope": "All sessions"
+      }
+    }
+  },
   "DesignSystem": {
     "eyebrow": "Development reference",
     "title": "Design system foundation",
