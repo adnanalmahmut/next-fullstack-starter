@@ -80,6 +80,33 @@ builds the production application first, then Playwright starts it with
 
 The initial browser project is Chromium.
 
+### Opt-in infrastructure suites
+
+Two suites need real infrastructure and are deliberately outside the default
+Vitest configuration, each with its own config file and its own script. They
+cannot be reached by `pnpm test`, `pnpm test:unit`, or the coverage run, because
+`pnpm verify` has to pass on a machine that has neither Redis nor a worker.
+
+```text
+tests/redis/**/*.redis.test.ts    → pnpm test:redis:integration
+tests/jobs/**/*.jobs.test.ts      → pnpm test:jobs:integration
+```
+
+**Run:**
+
+```bash
+pnpm redis:test:up
+
+REDIS_ENABLED=true REDIS_URL=redis://127.0.0.1:6380 pnpm test:redis:integration
+JOBS_ENABLED=true JOBS_REDIS_URL=redis://127.0.0.1:6380 pnpm test:jobs:integration
+```
+
+The jobs suite needs PostgreSQL as well: the outbox is a table, and the
+guarantees under test are transactional. Both scope their keys to a run
+identifier — `REDIS_TEST_RUN_ID` and `JOBS_TEST_RUN_ID`, generated when absent —
+so two runs against one server cannot see each other's data, and both clean up
+only what they created.
+
 ## Common commands
 
 ```bash
@@ -103,8 +130,8 @@ Coverage uses the V8 provider.
 - Domain statements: 95%
 - Application statements: 90%
 
-Next.js App Router files and public module entry points are excluded from
-coverage measurement.
+Next.js App Router files, the proxy composition root, worker process entry
+points, and public module entry points are excluded from coverage measurement.
 
 The coverage report is generated in `coverage/` and is not committed.
 

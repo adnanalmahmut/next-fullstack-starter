@@ -204,6 +204,31 @@ None of them is a correctness mechanism, and every use declares what happens whe
 Redis is not there. The detailed policy for both areas is defined in
 [`cache-and-concurrency-controls.md`](./cache-and-concurrency-controls.md).
 
+### Background jobs
+
+```text
+src/platform/jobs
+src/worker
+prisma/jobs.prisma
+vitest.jobs.config.ts
+```
+
+Responsibilities:
+
+- Record work in a transactional outbox, inside the caller's own transaction.
+- Claim and publish those rows from a separate worker process.
+- Run a job with a bounded retry budget, a bounded backoff, and an abort-based
+  timeout.
+- Make a database effect happen once under at-least-once delivery.
+- Stay removable: no route, Server Action, or use case imports it.
+
+Jobs are disabled by default. Writing an outbox row needs `JOBS_ENABLED` and no
+Redis at all; only the queue, the worker, and the dispatcher need
+`JOBS_REDIS_URL`. BullMQ runs on `ioredis` inside this area alone and manages its
+own key namespace, so it shares no driver and no key space with the Redis
+foundation above. The detailed policy is defined in
+[`background-jobs-and-outbox.md`](./background-jobs-and-outbox.md).
+
 ### Authentication
 
 ```text
@@ -387,6 +412,7 @@ pnpm verify
 - [Route Handler Factory](./route-handler-factory.md)
 - [Redis Foundation](./redis-foundation.md)
 - [Cache and Concurrency Controls](./cache-and-concurrency-controls.md)
+- [Background Jobs and Transactional Outbox](./background-jobs-and-outbox.md)
 - [Design System](../design-system/README.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)

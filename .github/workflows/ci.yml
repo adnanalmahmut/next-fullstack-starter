@@ -65,6 +65,11 @@ jobs:
       # overrides this, so a regression that made the application depend on
       # Redis would fail `Verify project` rather than pass unnoticed.
       REDIS_ENABLED: "false"
+      # The same for background jobs, and for the same reason. No worker process
+      # is ever started here, and `JOBS_REDIS_URL` is deliberately absent from
+      # this block: `Verify project` and the end-to-end run must pass on a
+      # machine that has no queue and no address for one.
+      JOBS_ENABLED: "false"
 
     steps:
       - name: Checkout repository
@@ -116,6 +121,22 @@ jobs:
           # cannot read or delete each other's keys.
           REDIS_TEST_RUN_ID: ci-${{ github.run_id }}-${{ github.run_attempt }}
         run: pnpm test:redis:integration
+
+      # Background jobs, enabled for this step alone. The suite starts and stops
+      # its own workers; no long-lived worker process runs in CI, because a
+      # worker left running would consume the jobs the tests are asserting on.
+      #
+      # It needs PostgreSQL as well as Redis: the outbox is a table, and the
+      # guarantees under test — a change and its intent committing together, an
+      # effect and its receipt committing together — are transactional.
+      - name: Run jobs integration tests
+        env:
+          JOBS_ENABLED: "true"
+          JOBS_REDIS_URL: redis://127.0.0.1:6379
+          # Distinct per run and per attempt, so two CI runs against one server
+          # cannot consume each other's jobs.
+          JOBS_TEST_RUN_ID: ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: pnpm test:jobs:integration
 
       - name: Upload Playwright failure artifacts
         if: ${{ failure() }}

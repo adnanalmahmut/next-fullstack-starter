@@ -250,13 +250,29 @@ Deliberately absent, and to be taken up on their own merits:
 - a distributed lock algorithm;
 - an idempotency store behind the Route Handler factory's existing hook;
 - session storage and a Better Auth Redis adapter;
-- BullMQ, queues, an outbox, pub/sub, and streams;
+- pub/sub and streams;
 - Redis Cluster and Sentinel;
 - a production health endpoint.
 
 The Route Handler factory already declares typed rate-limit and idempotency hooks.
 Wiring them to Redis is a later change; this one only makes a connection
 available.
+
+## The queue runs on a different driver
+
+Background jobs also use Redis, and they deliberately do **not** use this
+foundation. BullMQ requires `ioredis` and needs a connection configured the way a
+consumer needs it — blocking reads, no client-side retry limit, its own key
+layout under its own prefix — which is the opposite of what a cache read wants.
+
+So there are two drivers, each confined to one directory: `redis` and `@redis/*`
+inside `src/platform/redis`, and `ioredis` and `bullmq` inside
+`src/platform/jobs`. Neither may import the other's driver, jobs may not use this
+key builder, and the two areas are removable independently in either order. The
+`architecture/no-redis-driver-import` rule enforces both halves.
+
+See
+[`background-jobs-and-outbox.md`](./background-jobs-and-outbox.md).
 
 ## Removing Redis from a generated project
 
@@ -282,10 +298,10 @@ Redis is a leaf. Removing it touches nothing that holds business logic.
 10. In `.github/workflows/ci.yml`, remove the `redis` service, the
     `REDIS_ENABLED` job variable, and the `Run Redis integration tests` step.
 11. In `.env.example` and `src/config/README.md`, remove the Redis variables.
-12. Remove the `architecture/no-redis-driver-import` rule from
-    `tools/eslint/architecture-plugin.mjs`, and the `architecture/redis-driver`,
-    `architecture/redis-platform`, and `architecture/concurrency-platform` blocks
-    from `eslint.config.mjs`.
+12. In `tools/eslint/architecture-plugin.mjs`, drop the cache-driver entry from
+    `no-redis-driver-import` — keep the rule and its queue-driver entry if
+    background jobs remain — and remove the `architecture/redis-platform` and
+    `architecture/concurrency-platform` blocks from `eslint.config.mjs`.
 13. Delete this document and its links from `docs/architecture/README.md`,
     `docs/architecture/module-map.md`, and `src/platform/README.md`.
 

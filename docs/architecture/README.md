@@ -15,6 +15,7 @@ System-level architectural documentation lives here.
 - [Route Handler Factory](./route-handler-factory.md)
 - [Redis Foundation](./redis-foundation.md)
 - [Cache and Concurrency Controls](./cache-and-concurrency-controls.md)
+- [Background Jobs and Transactional Outbox](./background-jobs-and-outbox.md)
 - [Design System](../design-system/README.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)
@@ -57,6 +58,10 @@ Current documentation covers:
   invalidation system shared by Actions and Route Handlers, an atomic
   fixed-window rate limiter, an idempotency lifecycle, lease locks, and an
   explicit fallback for every one of them.
+- An optional background-jobs platform: a transactional outbox in PostgreSQL, a
+  separate BullMQ worker process, a versioned job registry, bounded retries and
+  timeouts, idempotent database execution, two dead-letter stores, and a removal
+  procedure that touches no business code.
 - Semantic design tokens, reusable presentation primitives, and RTL/LTR UI.
 
 Future documentation may cover:
@@ -64,7 +69,7 @@ Future documentation may cover:
 - System context.
 - Data ownership.
 - Internationalization.
-- Background jobs.
+- Scheduled and recurring jobs.
 - Deployment architecture.
 
 Documentation must describe implemented architecture. Do not document

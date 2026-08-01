@@ -1,0 +1,113 @@
+/// Why an outbox row is in a terminal state it will not leave on its own.
+///
+/// Every member is a decision the dispatcher can make locally, from the message
+/// itself, without asking Redis anything. That is deliberate: a message that
+/// cannot be understood is a permanent problem, and retrying it forever would
+/// hide it behind a growing attempt counter instead of surfacing it.
+enum OutboxDeadLetterCode {
+  /// No definition is registered under this name.
+  UNKNOWN_JOB                @map("unknown-job")
+  /// The name is known, this version of it is not.
+  UNSUPPORTED_VERSION        @map("unsupported-version")
+  /// The payload does not satisfy the definition's schema.
+  INVALID_PAYLOAD            @map("invalid-payload")
+  /// The payload is larger than the transport limit.
+  PAYLOAD_TOO_LARGE          @map("payload-too-large")
+  /// Publishing kept failing until the attempt budget ran out.
+  PUBLISH_ATTEMPTS_EXHAUSTED @map("publish-attempts-exhausted")
+
+  @@map("outbox_dead_letter_code")
+}
+
+/// The transactional outbox.
+///
+/// Owned by `src/platform/jobs/outbox`. A row is written by the same
+/// PostgreSQL transaction that performs the business change it describes, which
+/// is the entire point: the change and the intent to publish it either both
+/// commit or both roll back. There is no window in which the database says one
+/// thing and the queue says another.
+///
+/// PostgreSQL is the durable source. Redis holds delivery state and may be lost
+/// entirely without losing a single row here; a dispatcher that comes back reads
+/// the unpublished rows and republishes them.
+///
+/// Stored values are minimized on purpose. `payload` holds only what the job's
+/// own schema accepts, and it is validated before the insert. Credentials,
+/// tokens, cookies, headers, raw request bodies, raw provider errors, stack
+/// traces, and connection strings are never written here — `lastErrorCode` is a
+/// stable code from a closed set, not a message.
+model OutboxMessage {
+  id         String @id @default(uuid(7))
+  jobName    String @db.VarChar(64)
+  jobVersion Int
+  payload    Json
+
+  /// Ties every line about this work back to the request that caused it.
+  correlationId String  @db.VarChar(128)
+  /// The message this one was caused by, when there is one.
+  causationId   String? @db.VarChar(128)
+  /// W3C `traceparent`, validated before it is stored. Never baggage.
+  traceparent   String? @db.VarChar(64)
+  /// W3C `tracestate`, validated and bounded at the W3C maximum.
+  tracestate    String? @db.VarChar(512)
+
+  /// When the business change happened, not when it was published.
+  occurredAt  DateTime @default(now())
+  /// The earliest a dispatcher may publish it. Moved forward by backoff.
+  availableAt DateTime @default(now())
+
+  publishAttempts Int       @default(0)
+  /// The dispatcher instance holding the current lease.
+  lockedBy        String?   @db.VarChar(64)
+  /// When that lease expires and another dispatcher may take the row.
+  lockedUntil     DateTime?
+  publishedAt     DateTime?
+
+  deadLetteredAt DateTime?
+  deadLetterCode OutboxDeadLetterCode?
+  /// A stable code from a closed set. Never an exception message.
+  lastErrorCode  String?               @db.VarChar(64)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The claim query, in the order it filters and then sorts: unpublished, not
+  /// dead-lettered, due, and oldest first. The trailing `id` makes the sort
+  /// total, so two dispatchers walking the same backlog agree on the order.
+  @@index([publishedAt, deadLetteredAt, availableAt, createdAt, id], map: "outbox_message_dispatchable_idx")
+  /// Recovering leases abandoned by a dispatcher that died mid-publish.
+  @@index([lockedUntil], map: "outbox_message_locked_until_idx")
+  /// Listing what is stuck, which is the first question after an alert.
+  @@index([deadLetteredAt], map: "outbox_message_dead_lettered_at_idx")
+  /// Answering "what happened to this kind of job" without a sequential scan.
+  @@index([jobName, jobVersion], map: "outbox_message_job_idx")
+  @@map("outbox_message")
+}
+
+/// Proof that one job's database effect has already been applied.
+///
+/// Delivery is at-least-once — that is a property of any queue, and this project
+/// does not pretend otherwise — so a handler may be asked to do the same work
+/// twice. The receipt is inserted in the *same* transaction as the effect, so
+/// "the effect happened" and "we know the effect happened" cannot disagree: if
+/// the effect rolls back, so does the receipt, and the job is free to be retried.
+///
+/// The key is opaque. It is a hash of the job name, the job version, and the
+/// domain's own idempotency key, so a value that must not appear in a database
+/// column — an email address, an external reference, an account number — can
+/// still be what makes two deliveries the same.
+///
+/// This is a database guarantee and nothing more. It does not make an HTTP call
+/// to a payment provider exactly-once; that needs the provider's own idempotency
+/// key.
+model JobExecutionReceipt {
+  /// The opaque execution key. Primary key: the uniqueness *is* the guarantee.
+  executionKey String   @id @db.VarChar(64)
+  jobName      String   @db.VarChar(64)
+  jobVersion   Int
+  completedAt  DateTime @default(now())
+
+  /// Supports pruning and "what has this job already done", oldest first.
+  @@index([jobName, jobVersion, completedAt], map: "job_execution_receipt_job_idx")
+  @@map("job_execution_receipt")
+}

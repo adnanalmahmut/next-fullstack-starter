@@ -136,6 +136,37 @@ Implementation rules are documented in
 for both areas in
 [`docs/architecture/cache-and-concurrency-controls.md`](../../docs/architecture/cache-and-concurrency-controls.md).
 
+## Background jobs
+
+An optional transactional outbox and BullMQ worker are implemented under
+`src/platform/jobs`, with the process entry points under `src/worker`.
+
+- `config/jobs-config.ts` reads the configuration lazily and keeps two levels
+  apart: `JOBS_ENABLED` turns the outbox on, `JOBS_REDIS_URL` is required only
+  where a queue, a worker, or the dispatcher is built.
+- `definitions/` own `defineJob`, the validated envelope, and the closed registry
+  keyed by `name.v<version>`.
+- `outbox/write-outbox-message.server.ts` takes a `Prisma.TransactionClient` and
+  refuses the singleton, so the row and the business change share a commit.
+- `outbox/outbox-dispatcher.server.ts` claims with `FOR UPDATE SKIP LOCKED` in a
+  short transaction and publishes only after it commits.
+- `execution/` own the abort-based timeout, the failure taxonomy, the opaque
+  execution key, and `runDatabaseJobOnce`.
+- `runtime/worker-runtime.server.ts` starts and stops the consumer and the
+  dispatcher together, and registers no signal handler.
+- `index.server.ts` exposes the controlled server-only entry point, and
+  deliberately does not export the queue.
+
+Jobs are disabled by default and required by nothing: the application builds,
+runs, and passes `pnpm verify` with no jobs variable set and no worker running.
+`bullmq` and `ioredis` may be imported only inside this directory — the Redis
+foundation runs on a different driver — so removing background jobs is a matter
+of deleting two directories.
+
+Implementation rules are documented in [`jobs/README.md`](./jobs/README.md) and
+the architectural policy, including the removal procedure, in
+[`docs/architecture/background-jobs-and-outbox.md`](../../docs/architecture/background-jobs-and-outbox.md).
+
 ## Observability
 
 Structured logging and request correlation are implemented under

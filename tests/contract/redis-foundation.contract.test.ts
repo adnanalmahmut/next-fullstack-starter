@@ -74,7 +74,15 @@ const redisProductionSources = redisSources.filter(
   (path) => !path.includes(".test."),
 );
 
-const driverPattern = /^(?:(?:redis|ioredis)(?:\/|$)|@redis\/)/;
+/**
+ * The cache driver, and only it.
+ *
+ * `ioredis` is deliberately excluded: it belongs to the background-jobs
+ * platform, which runs BullMQ on it and needs a connection configured the way a
+ * consumer needs it. The two drivers are separate on purpose, each confined to
+ * its own directory, and each removable without the other.
+ */
+const driverPattern = /^(?:redis(?:\/|$)|@redis\/)/;
 
 const ciWorkflow = read(".github/workflows/ci.yml");
 const packageJson = JSON.parse(read("package.json")) as {
@@ -243,16 +251,20 @@ describe("driver containment", () => {
     ]);
   });
 
-  it("declares the driver as the only Redis dependency", () => {
+  it("adds no second cache, lock, or rate-limit library", () => {
     const allDependencies = {
       ...packageJson.dependencies,
       ...packageJson.devDependencies,
     };
-    const redisRelated = Object.keys(allDependencies).filter((name) =>
+    const related = Object.keys(allDependencies).filter((name) =>
       /redis|bullmq|redlock|upstash|cache|rate-limit/i.test(name),
     );
 
-    expect(redisRelated).toEqual(["redis"]);
+    // `bullmq` and `ioredis` belong to the background-jobs platform and are
+    // installed for it; the Redis foundation itself still has exactly one
+    // driver, and nothing has been added beside it to cache, lock, or count.
+    expect([...related].sort()).toEqual(["bullmq", "ioredis", "redis"]);
+    expect(packageJson.dependencies.redis).toBeDefined();
   });
 });
 

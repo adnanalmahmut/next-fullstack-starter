@@ -159,6 +159,55 @@ when Redis is not there. Nothing in this repository is wired to them yet.
 See
 [`docs/architecture/cache-and-concurrency-controls.md`](docs/architecture/cache-and-concurrency-controls.md).
 
+## Optional Background Jobs
+
+Background jobs are optional and disabled by default. The application builds,
+runs, and passes `pnpm verify` and `pnpm test:e2e` with no queue, no worker, and
+no queue address.
+
+There are two independent levels. `JOBS_ENABLED` turns on the transactional
+outbox, which is a plain insert inside your own transaction and needs no Redis:
+
+```ts
+await database.$transaction(async (tx) => {
+  const result = await performBusinessMutation(tx);
+
+  await writeOutboxMessage(tx, { job: MY_JOB, payload: { id: result.id } });
+
+  return result;
+});
+```
+
+`JOBS_REDIS_URL` is needed only to build a queue, a worker, or the dispatcher —
+that is, only by the separate worker process. The web application keeps recording
+work while Redis and the worker are down.
+
+| Command                      | Purpose                                    |
+| ---------------------------- | ------------------------------------------ |
+| `pnpm jobs:worker`           | Run the worker process.                    |
+| `pnpm jobs:worker:dev`       | Run the worker in watch mode.              |
+| `pnpm jobs:outbox:once`      | Publish one batch, then exit.              |
+| `pnpm jobs:status`           | Report outbox state from PostgreSQL alone. |
+| `pnpm test:jobs:integration` | Run the opt-in jobs integration suite.     |
+
+The worker is a separate process and is never started by `pnpm dev`, `pnpm
+build`, or `pnpm start`. The jobs integration suite is opt-in and is not part of
+`pnpm verify`:
+
+```bash
+pnpm redis:test:up
+
+JOBS_ENABLED=true JOBS_REDIS_URL=redis://127.0.0.1:6380 pnpm test:jobs:integration
+```
+
+Delivery is at-least-once, so handlers are made idempotent with
+`runDatabaseJobOnce`. The job registry ships empty: no business job is defined,
+and nothing in this repository writes to the outbox yet.
+
+See
+[`docs/architecture/background-jobs-and-outbox.md`](docs/architecture/background-jobs-and-outbox.md),
+including how to remove background jobs from a generated project.
+
 ## Verification
 
 Ensure the test database is running:

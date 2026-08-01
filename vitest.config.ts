@@ -78,6 +78,11 @@ export default defineConfig({
       exclude: [
         "src/app/**",
         "src/proxy.ts",
+        // Process entry points, for the same reason as `src/proxy.ts`: they own
+        // signal handlers, an exit code, and a Prisma disconnect, none of which
+        // a unit test can exercise without becoming the process. What they
+        // delegate to is covered.
+        "src/worker/jobs.*.ts",
         "src/i18n/navigation.ts",
         "src/i18n/request.ts",
         "src/i18n/routing.ts",

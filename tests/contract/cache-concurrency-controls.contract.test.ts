@@ -681,8 +681,18 @@ describe("scope exclusions", () => {
       dependencies: Record<string, string>;
     };
 
-    for (const forbidden of ["bullmq", "ioredis", "redlock", "lru-cache"]) {
+    for (const forbidden of ["redlock", "lru-cache", "node-cache"]) {
       expect(Object.keys(manifest.dependencies)).not.toContain(forbidden);
+    }
+
+    // `bullmq` and `ioredis` are installed for the background-jobs platform.
+    // What matters here is unchanged: neither reaches the controls, which run on
+    // the `redis` driver through @/platform/redis.
+    for (const path of controlProduction) {
+      for (const specifier of readImports(read(path))) {
+        expect(/^(?:ioredis|bullmq)(?:\/|$)/.test(specifier), path).toBe(false);
+        expect(specifier.startsWith("@/platform/jobs"), path).toBe(false);
+      }
     }
   });
 
@@ -788,7 +798,7 @@ const probeResults = {
 describe("the boundaries are enforced by the linter", () => {
   it("refuses a Redis driver import in the cache platform", () => {
     expect(probeResults.redisDriverInCache).toContain(
-      "A Redis driver may only be imported",
+      "may only be imported inside src/platform/redis/",
     );
   });
 
