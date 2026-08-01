@@ -25,6 +25,29 @@ import { database } from "@/platform/database/index.server";
 
 Business rules must not be implemented in the platform database layer. Business modules should place their database repositories and persistence mappings inside their own infrastructure layer.
 
+## Server Actions
+
+The single Server Action adapter is implemented under `src/platform/actions`.
+
+- `action-result.ts` is the client-safe result contract, imported directly by
+  presentation code.
+- `define-action.server.ts` owns the fixed order: validate, resolve the actor,
+  authorize, run `beforeExecute`, run the use case, run `afterSuccess`, invalidate.
+- `action-definition.ts` declares the closed set of authorization modes and
+  derives the actor type from the declared mode.
+- `cache-invalidation.server.ts` applies statically declared paths and tags after
+  a success.
+- `log-event.ts` closes the log-field allowlist over the payload type.
+- `index.server.ts` exposes the controlled server-only entry point.
+
+The adapter holds no business logic and reaches no database, repository, business
+module, or transport; an ESLint boundary enforces that. Post-success audit and
+cache invalidation are not transactional with the use case.
+
+Implementation rules are documented in [`actions/README.md`](./actions/README.md)
+and the architectural policy in
+[`docs/architecture/server-action-factory.md`](../../docs/architecture/server-action-factory.md).
+
 ## Observability
 
 Structured logging and request correlation are implemented under

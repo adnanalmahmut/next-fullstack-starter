@@ -11,6 +11,7 @@ System-level architectural documentation lives here.
 - [Proxy Request Pipeline](./proxy-request-pipeline.md)
 - [Authentication Foundation](./authentication-foundation.md)
 - [Authorization and Admin Access Control](./authorization-admin-access-control.md)
+- [Server Action Factory](./server-action-factory.md)
 - [Design System](../design-system/README.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)
@@ -38,6 +39,9 @@ Current documentation covers:
 - Capability permissions, a normalized actor, resource policies, the
   least-privilege administrator role, the protected administration area, and the
   authorization audit trail.
+- The single Server Action adapter: declared authorization modes, a fixed
+  execution order, inferred input and output types, lifecycle hooks, allowlisted
+  logging, and declarative post-success cache invalidation.
 - Semantic design tokens, reusable presentation primitives, and RTL/LTR UI.
 
 Future documentation may cover:
