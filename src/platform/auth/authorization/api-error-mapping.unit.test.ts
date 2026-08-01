@@ -60,12 +60,13 @@ describe("toApplicationError", () => {
     { status: "FORBIDDEN", code: ERROR_CODE.FORBIDDEN },
     { status: "NOT_FOUND", code: ERROR_CODE.NOT_FOUND },
     { status: "CONFLICT", code: ERROR_CODE.CONFLICT },
+    { status: "TOO_MANY_REQUESTS", code: ERROR_CODE.RATE_LIMITED },
   ] as const)("maps $status to $code", ({ status, code }) => {
     expect(toApplicationError(new APIError(status)).code).toBe(code);
   });
 
   it("maps an unmodelled status to an internal error", () => {
-    expect(toApplicationError(new APIError("TOO_MANY_REQUESTS")).code).toBe(
+    expect(toApplicationError(new APIError("NOT_ACCEPTABLE")).code).toBe(
       ERROR_CODE.INTERNAL_ERROR,
     );
     expect(toApplicationError(new APIError("INTERNAL_SERVER_ERROR")).code).toBe(

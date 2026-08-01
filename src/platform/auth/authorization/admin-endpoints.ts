@@ -5,7 +5,7 @@ import { PERMISSION, type Permission } from "./permission-registry";
  * The Better Auth Admin plugin endpoints this application supports.
  *
  * These paths are reachable directly under `/api/auth`, so protecting the
- * application's own `/api/admin` routes is not enough. The guard hook uses this
+ * application's own `/api/v1/admin` routes is not enough. The guard hook uses this
  * table as an allowlist: an admin path that is not listed here is refused, which
  * keeps the surface closed by construction, including for endpoints a future
  * Better Auth version might add.

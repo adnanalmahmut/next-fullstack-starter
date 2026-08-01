@@ -617,13 +617,13 @@ describe("ESLint architecture contract", () => {
         code: `
           import "server-only";
 
-          export { GET } from "@/app/api/admin/audit/route";
+          export { GET } from "@/app/api/v1/admin/audit/route";
         `,
         message: "must not depend on application routing",
       },
       {
         name: "an administration route importing the database",
-        filePath: "src/app/api/admin/contract-fixture/route.ts",
+        filePath: "src/app/api/v1/admin/contract-fixture/route.ts",
         code: `
           export { database } from "@/platform/database/index.server";
         `,
@@ -692,7 +692,7 @@ describe("ESLint architecture contract", () => {
       },
       {
         name: "a comparison inside a Route Handler",
-        filePath: "src/app/api/admin/contract-fixture-role/route.ts",
+        filePath: "src/app/api/v1/admin/contract-fixture-role/route.ts",
         code: `
           export function GET() {
             const role = "user";

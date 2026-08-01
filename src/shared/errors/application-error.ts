@@ -45,6 +45,20 @@ export class ConflictError extends ApplicationError {
   }
 }
 
+/**
+ * The caller sent more requests than a limiter allows.
+ *
+ * It exists because the Route Handler factory's rate-limit extension point has to
+ * be able to refuse a request with an answer a client can act on. No limiter is
+ * implemented yet; a refusal can currently only come from a hook a definition
+ * supplies.
+ */
+export class RateLimitedError extends ApplicationError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(ERROR_CODE.RATE_LIMITED, message, options);
+  }
+}
+
 export class InternalError extends ApplicationError {
   constructor(message: string, options?: ErrorOptions) {
     super(ERROR_CODE.INTERNAL_ERROR, message, options);

@@ -224,18 +224,24 @@ change alone cannot expose a page.
 
 ## Route Handler protection
 
-Every `/api/admin` handler is a public entry point. Each one:
+The administration endpoints live under `/api/v1/admin` and are built by the
+Route Handler factory. Each one is a public entry point, and the factory makes
+each one:
 
-- reads the session itself and builds the actor,
-- requires its capability through the centralized helper,
-- validates params, query, and body with Zod,
-- calls the server service, never a duplicate of its logic,
-- answers through the shared HTTP error contract,
-- imports no Prisma client and no database module,
-- compares no role, logs no body and no headers, and returns no provider error.
+- read the session itself and build the actor,
+- require its declared capability through the centralized gate,
+- validate params, query, and body with Zod, independently,
+- call the server service, never a duplicate of its logic,
+- answer through the shared HTTP response envelope and error contract,
+- reach no Prisma client and no database module,
+- compare no role, log no body and no headers, and return no provider error.
 
 The capability is required before the target identifier is validated or loaded, so
 an unauthorized caller is refused whether or not the target exists.
+
+A handler declares and delegates; it restates none of the above. The boundary
+itself is documented in
+[`route-handler-factory.md`](./route-handler-factory.md).
 
 ## Proxy
 
@@ -330,7 +336,7 @@ a body or a query string.
 ## Direct Better Auth endpoint protection
 
 The Admin plugin endpoints are reachable at `/api/auth/admin/...`, so protecting
-`/api/admin` is not enough.
+`/api/v1/admin` is not enough.
 
 Better Auth runs `hooks.before` and `hooks.after` for a router request and for a
 direct `auth.api.*` call alike. `authorization/admin-guard.server.ts` uses that to
@@ -394,7 +400,7 @@ identity.session.revoked
 ```
 
 Only a mutation that actually succeeded is recorded, exactly once, whether it came
-through `/api/admin` or through `/api/auth/admin`. Reads are not audited.
+through `/api/v1/admin` or through `/api/auth/admin`. Reads are not audited.
 
 ### Data minimization
 

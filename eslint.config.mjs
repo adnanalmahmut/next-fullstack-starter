@@ -176,6 +176,45 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    name: "architecture/route-handlers",
+    files: ["src/platform/http/**/*.{ts,tsx}"],
+    // The Route Handler adapter resolves request context, validates, authorizes,
+    // orchestrates hooks, normalizes errors, serializes the envelope, and logs.
+    // Business logic, persistence, and rendering belong elsewhere.
+    rules: {
+      "no-restricted-imports": restrictImports(
+        restrictedImportPatterns.prisma,
+        restrictedImportPatterns.database,
+        restrictedImportPatterns.postgres,
+        restrictedImportPatterns.redis,
+        restrictedImportPatterns.queue,
+        restrictedImportPatterns.betterAuth,
+        restrictedImportPatterns.react,
+        restrictedImportPatterns.translations,
+        {
+          regex: "^next$|^next/(?!server$)",
+          message:
+            "The Route Handler factory may use only the Next.js request type; it must not redirect, read ambient headers, or mutate cookies.",
+        },
+        {
+          regex: "^@/platform/actions(?:/|$)",
+          message:
+            "The Route Handler factory must not depend on the Server Action factory.",
+        },
+        {
+          regex: "^@/(?:app|modules|ui)(?:/|$)",
+          message:
+            "The Route Handler factory must not depend on application routing, business modules, or UI code.",
+        },
+        {
+          regex: "^(?:\\.\\.?/)+(?:[^/]+/)*(?:app|modules|ui)(?:/|$)",
+          message:
+            "The Route Handler factory must not reach application routing, business modules, or UI code through relative imports.",
+        },
+      ),
+    },
+  },
+  {
     name: "architecture/authorization-decisions",
     files: ["src/**/*.{ts,tsx}"],
     // Role names may only be named where roles are defined, where a stored role
@@ -295,6 +334,93 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.redis,
         restrictedImportPatterns.queue,
       ),
+    },
+  },
+  {
+    name: "architecture/versioned-api-adapters",
+    files: ["src/app/api/v1/**/route.{ts,tsx}"],
+    // A versioned endpoint is a declaration, not an implementation. Everything a
+    // handler used to repeat — reading a body, parsing input, checking a
+    // capability, catching an error, building a response — belongs to
+    // `defineRoute`, and restating it here would create a second contract.
+    //
+    // This block replaces the `architecture/app-routing` restrictions for these
+    // files rather than adding to them, so the persistence patterns are repeated
+    // here; a contract test proves both sets still apply.
+    rules: {
+      "no-restricted-imports": restrictImports(
+        restrictedImportPatterns.prisma,
+        restrictedImportPatterns.database,
+        restrictedImportPatterns.postgres,
+        restrictedImportPatterns.redis,
+        restrictedImportPatterns.queue,
+        restrictedImportPatterns.betterAuth,
+        {
+          regex: "^@/platform/http/(?!index\\.server(?:\\.[cm]?[jt]sx?)?$).+",
+          message:
+            "A Route Handler must use the controlled entry point @/platform/http/index.server.",
+        },
+        {
+          regex:
+            "^@/platform/auth/authorization/(?:require-permission|actor)\\.server(?:/|$)",
+          message:
+            "A Route Handler must declare its authorization mode instead of checking a capability itself.",
+        },
+        {
+          regex: "^next/(?:headers|server)$",
+          message:
+            "A Route Handler must not read the request itself; the factory supplies validated input.",
+        },
+      ),
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "TryStatement",
+          message:
+            "A Route Handler must not map errors itself; the factory normalizes every failure.",
+        },
+        {
+          selector: "NewExpression[callee.name='Response']",
+          message:
+            "A Route Handler must not build a response; the factory serializes the envelope.",
+        },
+        {
+          selector: "Identifier[name='NextResponse']",
+          message:
+            "A Route Handler must not build a response; the factory serializes the envelope.",
+        },
+        {
+          selector: "CallExpression[callee.property.name='json']",
+          message:
+            "A Route Handler must not read a body or serialize a response; the factory owns both.",
+        },
+        {
+          selector:
+            "CallExpression[callee.property.name=/^(?:parse|parseAsync|safeParse|safeParseAsync)$/]",
+          message:
+            "A Route Handler must declare a schema instead of parsing input itself.",
+        },
+        {
+          selector:
+            "CallExpression[callee.name=/^require(?:Actor|Permission|AnyPermission|AllPermissions)$/]",
+          message:
+            "A Route Handler must declare its authorization mode instead of checking a capability itself.",
+        },
+      ],
+    },
+  },
+  {
+    name: "architecture/better-auth-catch-all",
+    files: ["src/app/api/auth/**/*.{ts,tsx}"],
+    // Better Auth owns every endpoint under this path. Wrapping it in the
+    // application's own factory would validate, authorize, and re-serialize
+    // responses the provider is responsible for.
+    rules: {
+      "no-restricted-imports": restrictImports({
+        regex: "^@/platform/http(?:/|$)",
+        message:
+          "The Better Auth catch-all is provider owned and must not be wrapped in the Route Handler factory.",
+      }),
     },
   },
   {

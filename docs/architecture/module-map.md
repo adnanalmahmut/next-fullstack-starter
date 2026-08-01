@@ -179,7 +179,7 @@ policy is defined in
 ```text
 src/platform/auth/authorization
 src/app/[locale]/(admin)/admin
-src/app/api/admin
+src/app/api/v1/admin
 prisma/authorization.prisma
 ```
 
@@ -192,7 +192,7 @@ Responsibilities:
 - Apply the capability, the policies, and the audit record to the Better Auth
   Admin endpoints, including a direct call.
 - Own the append-only authorization audit trail and its migration.
-- Serve the protected, localized administration area and its API.
+- Serve the protected, localized administration area and its versioned API.
 
 No access decision is made by comparing a role name, and the proxy plays no part
 in it. The detailed policy is defined in
@@ -334,6 +334,7 @@ pnpm verify
 - [Proxy Request Pipeline](./proxy-request-pipeline.md)
 - [Authentication Foundation](./authentication-foundation.md)
 - [Server Action Factory](./server-action-factory.md)
+- [Route Handler Factory](./route-handler-factory.md)
 - [Design System](../design-system/README.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)

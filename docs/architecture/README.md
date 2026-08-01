@@ -12,6 +12,7 @@ System-level architectural documentation lives here.
 - [Authentication Foundation](./authentication-foundation.md)
 - [Authorization and Admin Access Control](./authorization-admin-access-control.md)
 - [Server Action Factory](./server-action-factory.md)
+- [Route Handler Factory](./route-handler-factory.md)
 - [Design System](../design-system/README.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)
@@ -42,6 +43,10 @@ Current documentation covers:
 - The single Server Action adapter: declared authorization modes, a fixed
   execution order, inferred input and output types, lifecycle hooks, allowlisted
   logging, and declarative post-success cache invalidation.
+- The single Route Handler adapter: the versioned `/api/v1` surface, declared
+  authorization modes, a fixed execution order, independently validated params,
+  query, and body, typed lifecycle hooks, one JSON response envelope, and
+  allowlisted request logging.
 - Semantic design tokens, reusable presentation primitives, and RTL/LTR UI.
 
 Future documentation may cover:
