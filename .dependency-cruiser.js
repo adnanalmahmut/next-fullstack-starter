@@ -37,6 +37,81 @@ module.exports = {
       },
     },
     {
+      name: "no-queue-driver-outside-jobs",
+      comment:
+        "BullMQ and the ioredis connection it runs on belong to src/platform/jobs. Keeping every import inside that directory is what makes background jobs removable by deleting it.",
+      severity: "error",
+      from: {
+        path: "^(?:src|tests)/",
+        pathNot: "^src/platform/jobs/",
+      },
+      to: {
+        path: "(?:^|/)node_modules/(?:bullmq|ioredis)/",
+      },
+    },
+    {
+      name: "no-jobs-platform-internal-imports",
+      comment:
+        "Background jobs are reached through @/platform/jobs/index.server. The queue itself is deliberately not exported there: work is enqueued by writing an outbox row inside a transaction.",
+      severity: "error",
+      from: {
+        path: "^src/",
+        pathNot: "^src/platform/jobs/",
+      },
+      to: {
+        path: "^src/platform/jobs/(?!index\\.server\\.ts$).+",
+      },
+    },
+    {
+      name: "no-jobs-in-request-path",
+      comment:
+        "Routing, UI, and translations must not depend on background jobs. A request records work in its own transaction; it never touches a queue.",
+      severity: "error",
+      from: {
+        path: "^src/(?:app|ui|i18n)/",
+      },
+      to: {
+        path: "^src/(?:platform/jobs|worker)/",
+      },
+    },
+    {
+      name: "no-jobs-to-presentation",
+      comment:
+        "The jobs platform must not depend on routing, UI, translations, or business modules.",
+      severity: "error",
+      from: {
+        path: "^src/(?:platform/jobs|worker)/",
+      },
+      to: {
+        path: "^src/(?:app|ui|i18n|modules)/",
+      },
+    },
+    {
+      name: "no-jobs-to-redis-platform",
+      comment:
+        "BullMQ manages its own key namespace. A job that borrowed the cache's key builder would put queue keys inside the cache's key space, and would tie two independently removable areas together.",
+      severity: "error",
+      from: {
+        path: "^src/platform/jobs/",
+      },
+      to: {
+        path: "^src/platform/(?:redis|cache|concurrency)/",
+      },
+    },
+    {
+      name: "no-imports-of-worker-entry-points",
+      comment:
+        "src/worker holds processes, not libraries. Importing one would install its signal handlers and its exit code into the importing process.",
+      severity: "error",
+      from: {
+        path: "^(?:src|tests)/",
+        pathNot: "^src/worker/",
+      },
+      to: {
+        path: "^src/worker/(?!bootstrap\\.ts$).+",
+      },
+    },
+    {
       name: "no-unresolvable-dependencies",
       comment: "All internal dependencies must resolve successfully.",
       severity: "error",

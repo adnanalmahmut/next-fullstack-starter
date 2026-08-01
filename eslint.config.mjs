@@ -34,6 +34,16 @@ const restrictedImportPatterns = {
     regex: "^bullmq(?:/|$)",
     message: "Queue access is restricted to infrastructure adapters.",
   },
+  jobs: {
+    regex: "^@/platform/jobs(?:/|$)",
+    message:
+      "This layer must not depend on background jobs. Work is recorded by writing an outbox row inside the transaction that earns it.",
+  },
+  worker: {
+    regex: "^@/worker(?:/|$)",
+    message:
+      "The worker entry points are a process, not a library. Nothing may import them.",
+  },
   cache: {
     regex: "^@/platform/cache(?:/|$)",
     message:
@@ -106,11 +116,14 @@ const eslintConfig = defineConfig([
     },
   },
   {
-    name: "architecture/redis-driver",
+    name: "architecture/infrastructure-drivers",
     files: ["src/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}", "tools/**/*.mjs"],
     // Its own rule rather than a `no-restricted-imports` entry: that option is
     // replaced wholesale by the later, more specific layer blocks, and this
-    // boundary has to hold for every file in the repository.
+    // boundary has to hold for every file in the repository. It covers both
+    // driver families — `redis` for the Redis platform, `ioredis` and `bullmq`
+    // for the jobs platform — and refuses each outside the directory that owns
+    // it, including inside the other one.
     plugins: {
       architecture: architecturePlugin,
     },
@@ -130,6 +143,7 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.database,
         restrictedImportPatterns.postgres,
         restrictedImportPatterns.queue,
+        restrictedImportPatterns.jobs,
         restrictedImportPatterns.betterAuth,
         restrictedImportPatterns.react,
         restrictedImportPatterns.translations,
@@ -176,6 +190,7 @@ const eslintConfig = defineConfig([
             restrictedImportPatterns.database,
             restrictedImportPatterns.postgres,
             restrictedImportPatterns.queue,
+            restrictedImportPatterns.jobs,
             restrictedImportPatterns.betterAuth,
             restrictedImportPatterns.react,
             restrictedImportPatterns.translations,
@@ -217,6 +232,7 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.database,
         restrictedImportPatterns.postgres,
         restrictedImportPatterns.queue,
+        restrictedImportPatterns.jobs,
         restrictedImportPatterns.betterAuth,
         restrictedImportPatterns.react,
         restrictedImportPatterns.translations,
@@ -236,6 +252,97 @@ const eslintConfig = defineConfig([
           regex: "^(?:\\.\\.?/)+(?:[^/]+/)*(?:app|modules|ui)(?:/|$)",
           message:
             "The concurrency platform must not reach application routing, business modules, or UI code through relative imports.",
+        },
+      ),
+    },
+  },
+  {
+    name: "architecture/jobs-platform",
+    files: ["src/platform/jobs/**/*.{ts,tsx}"],
+    // The jobs platform owns the outbox, the queue, and the worker runtime. It
+    // is one of the two areas allowed to reach persistence directly — the outbox
+    // *is* a table, and the receipt that makes an effect idempotent has to be
+    // written in the caller's transaction — so Prisma is deliberately not
+    // restricted here.
+    //
+    // Everything else is. It must not render, must not read a request, must not
+    // know a business module, and must not reach the Redis platform: BullMQ owns
+    // its own key layout under its own prefix, and a job that borrowed the
+    // cache's key builder would put queue keys inside the cache's namespace.
+    rules: {
+      "no-restricted-imports": restrictImports(
+        restrictedImportPatterns.react,
+        restrictedImportPatterns.next,
+        restrictedImportPatterns.translations,
+        restrictedImportPatterns.betterAuth,
+        restrictedImportPatterns.cache,
+        restrictedImportPatterns.concurrency,
+        restrictedImportPatterns.worker,
+        {
+          regex: "^(?:(?:redis)(?:/|$)|@redis/)",
+          message:
+            "The jobs platform runs on ioredis through BullMQ; the cache driver belongs to @/platform/redis.",
+        },
+        {
+          regex: "^@/platform/redis(?:/|$)",
+          message:
+            "The jobs platform must not depend on the Redis platform. BullMQ manages its own namespace, and a queue key must never land in the cache's key space.",
+        },
+        {
+          regex: "^@/platform/(?:actions|http|proxy|auth)(?:/|$)",
+          message:
+            "The jobs platform must not depend on an application adapter or on authentication.",
+        },
+        {
+          regex: "^@/(?:app|modules|ui)(?:/|$)",
+          message:
+            "The jobs platform must not depend on application routing, business modules, or UI code.",
+        },
+        {
+          regex: "^(?:\\.\\.?/)+(?:[^/]+/)*(?:app|modules|ui)(?:/|$)",
+          message:
+            "The jobs platform must not reach application routing, business modules, or UI code through relative imports.",
+        },
+      ),
+    },
+  },
+  {
+    name: "architecture/worker-entry-points",
+    files: ["src/worker/**/*.ts"],
+    // A worker entry point owns a process: signal handlers, an exit code, and
+    // the lifetime of the Prisma connection. It reaches background jobs only
+    // through the controlled entry point, so the queue driver stays inside the
+    // platform even for the one process built to run it.
+    rules: {
+      "no-restricted-imports": restrictImports(
+        restrictedImportPatterns.react,
+        restrictedImportPatterns.translations,
+        restrictedImportPatterns.betterAuth,
+        restrictedImportPatterns.queue,
+        restrictedImportPatterns.redis,
+        restrictedImportPatterns.prisma,
+        restrictedImportPatterns.postgres,
+        restrictedImportPatterns.cache,
+        restrictedImportPatterns.concurrency,
+        {
+          regex: "^next(?!/env$)(?:/|$)|^@next/(?!env$)",
+          message:
+            "A worker is not a Next.js process; only the environment loader may be used.",
+        },
+        {
+          regex: "^@/platform/jobs/(?!index\\.server(?:\\.[cm]?[jt]sx?)?$).+",
+          message:
+            "A worker entry point must use the controlled entry point @/platform/jobs/index.server.",
+        },
+        {
+          regex: "^@/(?:app|modules|ui|i18n)(?:/|$)",
+          message:
+            "A worker entry point must not depend on application routing, business modules, UI code, or translations.",
+        },
+        {
+          regex: "^@/platform/(?:actions|http|proxy|auth)(?:/|$)",
+          message:
+            "A worker serves no request and must not depend on an application adapter or on authentication.",
         },
       ),
     },
@@ -272,6 +379,7 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.redis,
         restrictedImportPatterns.betterAuth,
         restrictedImportPatterns.queue,
+        restrictedImportPatterns.jobs,
         {
           regex: "^@/modules(?:/|$)",
           message:
@@ -307,6 +415,7 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.postgres,
         restrictedImportPatterns.redis,
         restrictedImportPatterns.queue,
+        restrictedImportPatterns.jobs,
         restrictedImportPatterns.betterAuth,
         restrictedImportPatterns.react,
         restrictedImportPatterns.translations,
@@ -350,6 +459,7 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.postgres,
         restrictedImportPatterns.redis,
         restrictedImportPatterns.queue,
+        restrictedImportPatterns.jobs,
         restrictedImportPatterns.betterAuth,
         restrictedImportPatterns.react,
         restrictedImportPatterns.translations,
@@ -411,6 +521,7 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.postgres,
         restrictedImportPatterns.redis,
         restrictedImportPatterns.queue,
+        restrictedImportPatterns.jobs,
         restrictedImportPatterns.cache,
         restrictedImportPatterns.concurrency,
         {
@@ -430,6 +541,7 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.postgres,
         restrictedImportPatterns.redis,
         restrictedImportPatterns.queue,
+        restrictedImportPatterns.jobs,
         restrictedImportPatterns.react,
         {
           regex: "^@/modules(?:/|$)",
@@ -457,6 +569,7 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.react,
         restrictedImportPatterns.redis,
         restrictedImportPatterns.queue,
+        restrictedImportPatterns.jobs,
         restrictedImportPatterns.translations,
         restrictedImportPatterns.cache,
         restrictedImportPatterns.concurrency,
@@ -500,6 +613,7 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.postgres,
         restrictedImportPatterns.redis,
         restrictedImportPatterns.queue,
+        restrictedImportPatterns.jobs,
       ),
     },
   },
@@ -521,6 +635,7 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.postgres,
         restrictedImportPatterns.redis,
         restrictedImportPatterns.queue,
+        restrictedImportPatterns.jobs,
         restrictedImportPatterns.betterAuth,
         {
           regex: "^@/platform/http/(?!index\\.server(?:\\.[cm]?[jt]sx?)?$).+",
@@ -614,6 +729,7 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.translations,
         restrictedImportPatterns.cache,
         restrictedImportPatterns.concurrency,
+        restrictedImportPatterns.jobs,
         {
           regex: "^@/(?:app|config|platform|ui)(?:/|$)",
           message:
@@ -664,6 +780,7 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.translations,
         restrictedImportPatterns.cache,
         restrictedImportPatterns.concurrency,
+        restrictedImportPatterns.jobs,
         {
           regex: "^@/(?:app|config|platform|ui)(?:/|$)",
           message:
@@ -743,6 +860,8 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.database,
         restrictedImportPatterns.postgres,
         restrictedImportPatterns.redis,
+        restrictedImportPatterns.queue,
+        restrictedImportPatterns.jobs,
         {
           regex:
             "^@/config/env(?:$|/(?!index\\.client(?:\\.[cm]?[jt]sx?)?$).+)",

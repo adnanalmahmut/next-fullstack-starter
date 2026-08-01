@@ -774,8 +774,6 @@ describe("scope", () => {
     expect(manifest.dependencies["@better-auth/prisma-adapter"]).toBe("1.6.25");
 
     for (const packageName of [
-      "ioredis",
-      "bullmq",
       "jsonwebtoken",
       "jose",
       "casbin",
@@ -786,15 +784,19 @@ describe("scope", () => {
       expect(installed, packageName).not.toHaveProperty(packageName);
     }
 
-    // The Redis driver is installed for the optional Redis foundation, which is
-    // disabled by default and unrelated to authorization. What matters here is
+    // The Redis and queue drivers are installed for the optional Redis
+    // foundation and the optional background-jobs platform, both disabled by
+    // default and both unrelated to authorization. What matters here is
     // unchanged: no authorization decision, session read, or audit write may
-    // reach it, so a capability is never answered from a cache.
+    // reach either, so a capability is never answered from a cache and never
+    // deferred to a worker.
     for (const { path, code } of authorizationFiles) {
-      expect(/from\s+["'](?:redis|ioredis|@redis\/)/.test(code), path).toBe(
-        false,
-      );
+      expect(
+        /from\s+["'](?:redis|ioredis|bullmq|@redis\/)/.test(code),
+        path,
+      ).toBe(false);
       expect(code.includes("@/platform/redis"), path).toBe(false);
+      expect(code.includes("@/platform/jobs"), path).toBe(false);
     }
   });
 

@@ -22,7 +22,11 @@ const restrictedClientImports = [
     reason: "Redis clients are server-only.",
   },
   {
-    regex: /^@\/platform\/(?:database|redis)(?:\/|$)/,
+    regex: /^bullmq(?:\/|$)/,
+    reason: "Queue clients are server-only.",
+  },
+  {
+    regex: /^@\/platform\/(?:database|redis|jobs)(?:\/|$)/,
     reason: "Infrastructure clients cannot be imported into client modules.",
   },
   {
@@ -400,40 +404,80 @@ const noRoleComparisonRule = {
  */
 export const REDIS_DRIVER_DIRECTORY = "src/platform/redis/";
 
-const redisDriverPattern = /^(?:(?:redis|ioredis)(?:\/|$)|@redis\/)/;
+/**
+ * The one directory allowed to import a queue driver.
+ *
+ * Background jobs are optional on exactly the same terms, and the same argument
+ * applies: `bullmq` and the `ioredis` it runs on live inside the jobs platform
+ * and nowhere else, so deleting that directory removes the whole capability.
+ *
+ * The two areas do not share a driver. BullMQ requires `ioredis` and needs a
+ * connection configured the way a consumer needs it — blocking reads, no
+ * client-side retry limit — which is the opposite of what a cache read wants,
+ * and it manages its own key layout underneath its own prefix. So `redis` and
+ * `@redis/*` belong to the Redis platform, `ioredis` and `bullmq` belong to the
+ * jobs platform, and neither may reach into the other's driver.
+ */
+export const JOBS_DRIVER_DIRECTORY = "src/platform/jobs/";
+
+const cacheDriverPattern = /^(?:redis(?:\/|$)|@redis\/)/;
+const queueDriverPattern = /^(?:ioredis|bullmq)(?:\/|$)/;
 
 const noRedisDriverImportRule = {
   meta: {
     type: "problem",
     docs: {
       description:
-        "Restrict Redis driver imports to the Redis platform directory.",
+        "Restrict Redis and queue driver imports to the directories that own them.",
     },
     schema: [],
     messages: {
       restrictedDriver:
-        'Do not import "{{specifier}}" here. A Redis driver may only be imported inside {{directory}}; use the controlled entry point @/platform/redis/index.server.',
+        'Do not import "{{specifier}}" here. It may only be imported inside {{directory}}; use the controlled entry point {{entryPoint}}.',
     },
   },
 
   create(context) {
     const filename = context.getFilename().replaceAll("\\", "/");
 
-    if (filename.includes(REDIS_DRIVER_DIRECTORY)) {
+    const drivers = [
+      {
+        pattern: cacheDriverPattern,
+        directory: REDIS_DRIVER_DIRECTORY,
+        entryPoint: "@/platform/redis/index.server",
+      },
+      {
+        pattern: queueDriverPattern,
+        directory: JOBS_DRIVER_DIRECTORY,
+        entryPoint: "@/platform/jobs/index.server",
+      },
+    ].filter((driver) => !filename.includes(driver.directory));
+
+    if (drivers.length === 0) {
       return {};
     }
 
     function check(sourceNode) {
       const specifier = getStaticString(sourceNode);
 
-      if (!specifier || !redisDriverPattern.test(specifier)) {
+      if (!specifier) {
+        return;
+      }
+
+      const driver = drivers.find(({ pattern }) => pattern.test(specifier));
+
+      if (!driver) {
         return;
       }
 
       context.report({
         node: sourceNode,
         messageId: "restrictedDriver",
-        data: { specifier, directory: REDIS_DRIVER_DIRECTORY },
+        data: {
+          specifier,
+          directory: driver.directory,
+          entryPoint: driver.entryPoint,
+        },
       });
     }
 

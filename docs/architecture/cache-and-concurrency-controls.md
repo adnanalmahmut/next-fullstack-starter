@@ -384,9 +384,15 @@ Enforced by ESLint and by `tests/contract/cache-concurrency-controls.contract.te
 
 No business cache, no cached authorization decision, no cached session, no
 Redis-only financial idempotency, no database-backed idempotency table, no
-Redlock, no Cluster, no Sentinel, no queue, no BullMQ, no Pub/Sub, no Streams, no
-websocket coordination, no custom cache handler, no metrics backend, and no new
-business endpoint.
+Redlock, no Cluster, no Sentinel, no Pub/Sub, no Streams, no websocket
+coordination, no custom cache handler, no metrics backend, and no new business
+endpoint.
+
+Background jobs are a separate area with a separate driver. The controls here run
+on the `redis` package through `@/platform/redis`; BullMQ runs on `ioredis` inside
+`src/platform/jobs` and manages its own key namespace. Neither imports the other,
+and a queue key can never land in the cache's key space. See
+[`background-jobs-and-outbox.md`](./background-jobs-and-outbox.md).
 
 ## Removing Redis
 

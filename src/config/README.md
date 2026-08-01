@@ -155,6 +155,37 @@ validation the way a missing `DATABASE_URL` does; `src/platform/redis/config.ts`
 reads them lazily on first use. See
 [`docs/architecture/redis-foundation.md`](../../docs/architecture/redis-foundation.md).
 
+### Optional Background-Jobs Variables
+
+Background jobs are optional, and come in two independent levels. With none of
+these set the application runs, builds, and passes `pnpm verify` and
+`pnpm test:e2e` with no queue and no worker.
+
+| Variable                          | Visibility | Required         | Purpose                                                                |
+| --------------------------------- | ---------- | ---------------- | ---------------------------------------------------------------------- |
+| `JOBS_ENABLED`                    | Server     | No               | Turns the outbox on. `true` or `false`, default `false`.               |
+| `JOBS_REDIS_URL`                  | Server     | Only for a queue | `redis://` or `rediss://` connection URL. No default.                  |
+| `JOBS_QUEUE_PREFIX`               | Server     | No               | BullMQ key prefix. Default `next-fullstack-starter-jobs`.              |
+| `JOBS_WORKER_CONCURRENCY`         | Server     | No               | Jobs one worker runs at once, 1-64. Default `5`.                       |
+| `JOBS_WORKER_SHUTDOWN_TIMEOUT_MS` | Server     | No               | Drain budget on shutdown, 1000-300000. Default `30000`.                |
+| `OUTBOX_BATCH_SIZE`               | Server     | No               | Rows claimed per pass, 1-500. Default `25`.                            |
+| `OUTBOX_POLL_INTERVAL_MS`         | Server     | No               | Wait after an empty pass, 50-60000. Default `1000`.                    |
+| `OUTBOX_LEASE_MS`                 | Server     | No               | Claim lease, 1000-600000 and above the poll interval. Default `30000`. |
+| `OUTBOX_MAX_PUBLISH_ATTEMPTS`     | Server     | No               | Publish attempts before dead-lettering, 1-50. Default `10`.            |
+| `OUTBOX_BACKOFF_BASE_MS`          | Server     | No               | First publish backoff, 50-60000. Default `1000`.                       |
+| `JOBS_TEST_RUN_ID`                | Server     | No               | Isolates one test run's queue. Generated when absent.                  |
+
+`JOBS_ENABLED` and `JOBS_REDIS_URL` are separate on purpose. Writing an outbox row
+is an insert inside the caller's transaction, so it needs the flag and no address;
+only a queue, a worker, or the dispatcher needs the address, and only
+`getJobsRedisConfiguration()` reads it. That is what lets the application keep
+recording work while Redis and the worker are down.
+
+Like the Redis block, these are absent from `serverEnvironmentSchema` and from
+`index.server.ts`, and `src/platform/jobs/config/jobs-config.ts` reads them lazily
+on first use. See
+[`docs/architecture/background-jobs-and-outbox.md`](../../docs/architecture/background-jobs-and-outbox.md).
+
 ### Supported `APP_ENV` Values
 
 - `development`
