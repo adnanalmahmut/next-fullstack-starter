@@ -89,6 +89,29 @@ Responsibilities:
 The detailed contracts and dependency direction are defined in
 [`error-handling.md`](./error-handling.md).
 
+### Server Action factory
+
+```text
+src/platform/actions/index.server.ts
+```
+
+Responsibilities:
+
+- Create every Server Action through one adapter, in a fixed order: validate,
+  resolve the actor, authorize, run `beforeExecute`, run the use case, run
+  `afterSuccess`, invalidate the declared cache entries.
+- Declare the closed set of authorization modes and derive the actor type from the
+  declared mode.
+- Infer the input type from the Zod schema and the output type from the use case.
+- Normalize every failure into an `ActionResult` through the shared public error
+  mapping.
+- Emit `server_action.*` events carrying only allowlisted fields.
+
+The adapter holds no business logic and reaches no database, repository, business
+module, or transport. Post-success audit and cache invalidation are not
+transactional with the use case. The detailed policy is defined in
+[`server-action-factory.md`](./server-action-factory.md).
+
 ### Observability
 
 ```text
@@ -310,6 +333,7 @@ pnpm verify
 - [Observability Foundation](./observability.md)
 - [Proxy Request Pipeline](./proxy-request-pipeline.md)
 - [Authentication Foundation](./authentication-foundation.md)
+- [Server Action Factory](./server-action-factory.md)
 - [Design System](../design-system/README.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)

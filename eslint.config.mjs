@@ -133,6 +133,49 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    name: "architecture/server-actions",
+    files: ["src/platform/actions/**/*.{ts,tsx}"],
+    // The Action adapter validates, authorizes, normalizes errors, runs hooks,
+    // logs, and builds an `ActionResult`. Business logic, persistence, and
+    // transport belong to the use case and to the route respectively.
+    rules: {
+      "no-restricted-imports": restrictImports(
+        restrictedImportPatterns.prisma,
+        restrictedImportPatterns.database,
+        restrictedImportPatterns.postgres,
+        restrictedImportPatterns.redis,
+        restrictedImportPatterns.queue,
+        restrictedImportPatterns.betterAuth,
+        restrictedImportPatterns.react,
+        restrictedImportPatterns.translations,
+        {
+          regex: "^next$|^next/(?!cache$)",
+          message:
+            "The Server Action factory may use only the Next.js cache APIs; it must not redirect, mutate cookies, or build an HTTP response.",
+        },
+        {
+          regex: "^@/platform/http(?:/|$)",
+          message:
+            "The Server Action factory must not build an HTTP response contract.",
+        },
+        {
+          regex: "^@/modules(?:/|$)",
+          message:
+            "The Server Action factory must not depend on business modules.",
+        },
+        {
+          regex: "^@/ui(?:/|$)",
+          message: "The Server Action factory must not depend on UI code.",
+        },
+        {
+          regex: "^(?:\\.\\.?/)+(?:[^/]+/)*(?:modules|ui)(?:/|$)",
+          message:
+            "The Server Action factory must not reach business modules or UI code through relative imports.",
+        },
+      ),
+    },
+  },
+  {
     name: "architecture/authorization-decisions",
     files: ["src/**/*.{ts,tsx}"],
     // Role names may only be named where roles are defined, where a stored role
