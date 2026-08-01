@@ -31,10 +31,11 @@ src/platform/auth/
 ├── README.md
 ├── auth.server.ts                  Better Auth server instance (server-only)
 ├── auth-client.ts                  client-safe Better Auth client
-├── access-control.ts               Admin plugin roles and statements
+├── access-control.ts               combined statements and the two roles
 ├── registration-policy.ts          pure sign-up availability policy
 ├── return-to.ts                    pure safe-redirect policy
 ├── session.server.ts               server-side session reads (server-only)
+├── authorization/                  capability permissions, actor, policies, audit
 └── presentation/
     ├── login-form.tsx              client boundary for sign-in
     └── logout-button.tsx           client boundary for sign-out
@@ -192,22 +193,26 @@ than by hiding a link.
 
 ## Admin plugin foundation
 
-The Admin plugin is configured because the repository rules require it, and its
-scope is deliberately narrow:
+The Admin plugin is the single source of roles and permissions:
 
 ```text
-statements    the plugin's own user and session capabilities
-roles         user (no administrative capability), admin (plugin defaults)
+statements    the plugin's own user and session capabilities, plus the
+              application capability statements declared in the permission registry
+roles         user (nothing granted), admin (least privilege)
 defaultRole   user
 adminRoles    ["admin"]
 ```
 
-No business resource is invented, no administrative interface exists, no
-impersonation interface exists, and no permission check is spread into
-application pages. The administrative fields (`role`, `banned`, `banReason`,
-`banExpires`, `impersonatedBy`) are server-owned.
+No business resource is invented, no impersonation interface exists, and no
+permission check is spread into application pages. The administrative fields
+(`role`, `banned`, `banReason`, `banExpires`, `impersonatedBy`) are server-owned,
+and `role` can never be supplied through input.
 
-A normalized `Actor`, `requirePermission`, and feature permissions are deferred.
+The normalized `Actor`, the capability helpers, the resource policies, the
+administration area, and the audit trail are documented in
+[`authorization-admin-access-control.md`](./authorization-admin-access-control.md).
+Banning, impersonation, and user lifecycle management remain deferred, and the
+`admin` role does not hold those capabilities.
 
 ## Migration ownership
 

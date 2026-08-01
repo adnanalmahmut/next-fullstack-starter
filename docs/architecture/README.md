@@ -10,6 +10,7 @@ System-level architectural documentation lives here.
 - [Observability Foundation](./observability.md)
 - [Proxy Request Pipeline](./proxy-request-pipeline.md)
 - [Authentication Foundation](./authentication-foundation.md)
+- [Authorization and Admin Access Control](./authorization-admin-access-control.md)
 - [Design System](../design-system/README.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)
@@ -34,12 +35,14 @@ Current documentation covers:
   classification in the proxy request pipeline.
 - Email and password authentication, database-backed sessions, and server-side
   session validation.
+- Capability permissions, a normalized actor, resource policies, the
+  least-privilege administrator role, the protected administration area, and the
+  authorization audit trail.
 - Semantic design tokens, reusable presentation primitives, and RTL/LTR UI.
 
 Future documentation may cover:
 
 - System context.
-- Authentication and authorization.
 - Data ownership.
 - Internationalization.
 - Caching.

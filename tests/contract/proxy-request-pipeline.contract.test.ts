@@ -423,6 +423,14 @@ describe("proxy route rules", () => {
     expect(routePathnames.sort()).toEqual([
       "/",
       "/account",
+      "/admin",
+      "/admin/audit",
+      "/admin/users",
+      "/api/admin/audit",
+      "/api/admin/users",
+      "/api/admin/users/[userId]",
+      "/api/admin/users/[userId]/role",
+      "/api/admin/users/[userId]/sessions/revoke",
       "/api/auth/[...all]",
       "/api/diagnostics/auth-session",
       "/api/diagnostics/request-context",
@@ -476,13 +484,16 @@ describe("proxy route rules", () => {
     );
 
     expect([...declaredAreas].sort()).toEqual([
+      "admin",
       "api",
       "auth",
       "front-office",
       "public",
     ]);
     expect(classify("/ar/register")).toBe("unknown");
-    expect(classify("/ar/admin")).toBe("unknown");
     expect(classify("/ar/reports")).toBe("unknown");
+    // Segment matching keeps a longer name out of the administration area.
+    expect(classify("/ar/administrator")).toBe("unknown");
+    expect(classify("/ar/administer")).toBe("unknown");
   });
 });

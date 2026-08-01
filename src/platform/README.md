@@ -67,7 +67,8 @@ Better Auth is configured under `src/platform/auth`.
 - `auth.server.ts` builds the server instance on the shared Prisma client.
 - `session.server.ts` exposes the server-side session reads.
 - `auth-client.ts` is the client-safe entry used only for sign-in and sign-out.
-- `access-control.ts` holds the Admin plugin statements and the two base roles.
+- `access-control.ts` holds the combined statements and the two least-privilege
+  roles.
 - `registration-policy.ts` and `return-to.ts` are pure, testable policies.
 
 Sessions are database-backed and validated on the server for every read. The
@@ -76,3 +77,24 @@ platform is not an authorization boundary by itself.
 Implementation rules are documented in [`auth/README.md`](./auth/README.md) and
 the architectural policy in
 [`docs/architecture/authentication-foundation.md`](../../docs/architecture/authentication-foundation.md).
+
+## Authorization
+
+Capability-based authorization is implemented under
+`src/platform/auth/authorization`.
+
+- `permission-registry.ts` declares every permission exactly once.
+- `role.ts` owns the closed role set and normalizes a stored role column.
+- `actor.ts` and `actor.server.ts` build the normalized server-side actor.
+- `require-permission.server.ts` is the only capability gate application code uses.
+- `policies/` hold the pure resource-level decisions.
+- `admin-guard.server.ts` applies the capability, the policies, and the audit
+  record to the Better Auth Admin endpoints, including a direct call.
+- `audit/` owns the append-only authorization audit trail.
+
+An authorization decision is never made by comparing a role name; an ESLint rule
+refuses that. The proxy plays no part in the decision.
+
+Implementation rules are documented in [`auth/README.md`](./auth/README.md) and
+the architectural policy in
+[`docs/architecture/authorization-admin-access-control.md`](../../docs/architecture/authorization-admin-access-control.md).

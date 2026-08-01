@@ -145,11 +145,35 @@ Responsibilities:
 - Apply the environment-derived registration policy.
 - Provide server-side session reads for Server Components and Route Handlers.
 - Own the technical identity models and their migration.
-- Keep the Admin plugin configured as a technical foundation only.
+- Configure the Admin plugin as the single source of roles and permissions.
 
 Authentication is not delegated to the proxy or to client state. The detailed
 policy is defined in
 [`authentication-foundation.md`](./authentication-foundation.md).
+
+### Authorization
+
+```text
+src/platform/auth/authorization
+src/app/[locale]/(admin)/admin
+src/app/api/admin
+prisma/authorization.prisma
+```
+
+Responsibilities:
+
+- Declare every capability permission once, in the registry.
+- Normalize a verified session into the server-side actor.
+- Provide the only capability gate application code uses.
+- Hold the resource policies for the supported administrative operations.
+- Apply the capability, the policies, and the audit record to the Better Auth
+  Admin endpoints, including a direct call.
+- Own the append-only authorization audit trail and its migration.
+- Serve the protected, localized administration area and its API.
+
+No access decision is made by comparing a role name, and the proxy plays no part
+in it. The detailed policy is defined in
+[`authorization-admin-access-control.md`](./authorization-admin-access-control.md).
 
 ### Design system
 

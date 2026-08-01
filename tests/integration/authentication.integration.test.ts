@@ -217,12 +217,19 @@ describe("sign-in", () => {
 
     await signUp(email);
 
-    const before = await database.session.count();
+    const user = await database.user.findUniqueOrThrow({
+      where: { email },
+      select: { id: true },
+    });
+    // Scoped to this account, so a concurrent suite creating its own sessions
+    // cannot change the result.
+    const where = { userId: user.id };
+    const before = await database.session.count({ where });
     const response = await signIn(email, "definitely-not-the-password");
 
     expect(response.status).toBe(401);
     expect(sessionCookieHeader(response)).not.toContain("session_token");
-    expect(await database.session.count()).toBe(before);
+    expect(await database.session.count({ where })).toBe(before);
   });
 
   it("does not distinguish an unknown address from a wrong password", async () => {
@@ -384,11 +391,15 @@ describe("admin plugin foundation", () => {
     await signUp(email);
 
     const cookie = sessionCookieHeader(await signIn(email));
-    const response = await auth.api.listUsers({
-      headers: headersWithCookie(cookie),
-      query: {},
-      asResponse: true,
-    });
+
+    // The authorization guard refuses the endpoint before it runs, so a direct
+    // `auth.api` call rejects rather than resolving to an error response. Over
+    // HTTP the router turns the same refusal into a 403.
+    const response = await auth.handler(
+      new Request("http://localhost/api/auth/admin/list-users", {
+        headers: headersWithCookie(cookie),
+      }),
+    );
 
     expect(response.ok).toBe(false);
     expect([401, 403]).toContain(response.status);

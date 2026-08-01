@@ -49,4 +49,14 @@ export const applicationRouteRules: readonly RouteRule[] = [
     match: "exact",
     localized: true,
   },
+  {
+    // A subtree rule, because the administration area has nested pages. It is
+    // classification only: the proxy never reads a session or decides access, so
+    // reaching `/admin` still depends entirely on the server-side check in the
+    // area's layout, its pages, and the administration API.
+    pathname: "/admin",
+    area: "admin",
+    match: "subtree",
+    localized: true,
+  },
 ];

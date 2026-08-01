@@ -1,0 +1,40 @@
+/// Technical authorization audit trail.
+///
+/// Owned by `src/platform/auth/authorization`. It records the administrative
+/// mutations the application supports, and nothing else.
+///
+/// The table is append-only from the application's perspective: the repository
+/// exposes an append and a read, and no update or delete. It intentionally has no
+/// foreign key to `user` or `session`, because an audit record must outlive the
+/// records it refers to and must never be removed by a cascade.
+///
+/// Stored values are minimized on purpose. The action is constrained by a
+/// database enum, and `metadata` only ever holds an allowlisted shape built by
+/// `audit-action.ts`. Credentials, tokens, cookies, headers, email addresses,
+/// display names, IP addresses, user agents, raw request bodies, and raw provider
+/// errors are never written here.
+enum AuthorizationAuditAction {
+  USER_ROLE_SET   @map("identity.user.role-set")
+  SESSION_REVOKED @map("identity.session.revoked")
+
+  @@map("authorization_audit_action")
+}
+
+model AuthorizationAuditRecord {
+  id             String                   @id @default(uuid(7))
+  occurredAt     DateTime                 @default(now())
+  actorUserId    String
+  actorSessionId String
+  action         AuthorizationAuditAction
+  targetUserId   String
+  requestId      String?
+  metadata       Json?
+
+  /// Supports the newest-first listing used by the admin audit view and API.
+  @@index([occurredAt])
+  /// Supports "what did this administrator do", ordered by time.
+  @@index([actorUserId, occurredAt])
+  /// Supports "what happened to this user", ordered by time.
+  @@index([targetUserId, occurredAt])
+  @@map("authorization_audit_record")
+}
