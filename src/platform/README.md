@@ -97,6 +97,45 @@ Implementation rules are documented in [`redis/README.md`](./redis/README.md) an
 the architectural policy, including the removal procedure, in
 [`docs/architecture/redis-foundation.md`](../../docs/architecture/redis-foundation.md).
 
+## Cache
+
+Two caches with one identity are implemented under `src/platform/cache`.
+
+- `cache-identity.ts` and `cache-policy.ts` own the validated identity contract
+  and the closed set of cache-life profiles.
+- `next-cache.server.ts` declares a lifetime and tags inside a `"use cache"`
+  scope; the directive itself is never wrapped.
+- `redis-cache-aside.server.ts` reads through Redis and falls back to the source
+  of truth whenever Redis cannot answer.
+- `cache-invalidation.server.ts` is the only place the Next.js invalidation APIs
+  are called, and it is shared by `defineAction` and `defineRoute`.
+
+PostgreSQL remains the source of truth. Business key factories belong to the
+module that owns the data, never to this directory.
+
+Implementation rules are documented in [`cache/README.md`](./cache/README.md).
+
+## Concurrency
+
+A rate limiter, an idempotency lifecycle, and a lease lock are implemented under
+`src/platform/concurrency`.
+
+- `rate-limit.server.ts` is a fixed-window limiter whose increment and expiry are
+  one atomic script.
+- `idempotency.server.ts` is a `begin` / `complete` / `abort` lifecycle guarded
+  by an owner token, not a lookup separate from its completion.
+- `lock.server.ts` is a single-Redis lease lock with a compare-and-delete
+  release. It is not Redlock and it does not protect an invariant on its own.
+- `route-adapters.server.ts` is the only bridge to `defineRoute`.
+
+Every use names its own fallback for a disabled or unreachable Redis; there is no
+implicit default. No existing endpoint is wired to any of these.
+
+Implementation rules are documented in
+[`concurrency/README.md`](./concurrency/README.md), and the architectural policy
+for both areas in
+[`docs/architecture/cache-and-concurrency-controls.md`](../../docs/architecture/cache-and-concurrency-controls.md).
+
 ## Observability
 
 Structured logging and request correlation are implemented under

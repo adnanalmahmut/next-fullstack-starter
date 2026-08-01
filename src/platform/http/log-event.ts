@@ -1,6 +1,6 @@
 import type { ErrorCode } from "@/shared/errors/error-code";
 
-import type { RouteHookName } from "./route-hooks";
+import type { RouteStepName } from "./route-hooks";
 
 /**
  * Stable log event names for the Route Handler boundary.
@@ -36,7 +36,7 @@ export type RouteLogFields = Readonly<{
   durationMs?: number;
   statusCode?: number;
   errorCode?: ErrorCode;
-  hookName?: RouteHookName;
+  hookName?: RouteStepName;
   replayed?: boolean;
 }>;
 
@@ -55,7 +55,7 @@ export type RouteLogInput = Readonly<{
   durationMs?: number | undefined;
   statusCode?: number | undefined;
   errorCode?: ErrorCode | undefined;
-  hookName?: RouteHookName | undefined;
+  hookName?: RouteStepName | undefined;
   replayed?: boolean | undefined;
 }>;
 

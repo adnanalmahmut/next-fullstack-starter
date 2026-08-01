@@ -167,7 +167,20 @@ describe("no core module depends on Redis", () => {
     },
   );
 
-  it("is imported by nothing outside its own directory and its own tests", () => {
+  /**
+   * The two platform areas allowed to build on Redis.
+   *
+   * They are the reason Redis exists in this repository, and they are the only
+   * production code that may name it. Everything else — auth, database, actions,
+   * http, proxy, observability, app, modules, ui — reaches these areas instead,
+   * so deleting Redis is still a matter of deleting directories.
+   */
+  const redisDependentRoots = [
+    "src/platform/cache/",
+    "src/platform/concurrency/",
+  ];
+
+  it("is imported only by the cache and concurrency platforms and by tests", () => {
     const importers = repositorySources.filter(
       (path) =>
         !path.startsWith(`${redisRoot}/`) &&
@@ -176,10 +189,27 @@ describe("no core module depends on Redis", () => {
         ),
     );
 
-    expect(importers).toEqual([
-      "tests/fixtures/redis.fixture.ts",
-      "tests/redis/redis-foundation.redis.test.ts",
-    ]);
+    for (const path of importers) {
+      const allowed =
+        path.startsWith("tests/") ||
+        redisDependentRoots.some((root) => path.startsWith(root));
+
+      expect(allowed, path).toBe(true);
+    }
+  });
+
+  it("is reached only through its controlled entry point", () => {
+    for (const root of redisDependentRoots) {
+      for (const path of collectSourceFiles(root.replace(/\/$/, ""))) {
+        for (const specifier of readImports(read(path))) {
+          if (!specifier.startsWith("@/platform/redis")) {
+            continue;
+          }
+
+          expect(specifier, path).toBe("@/platform/redis/index.server");
+        }
+      }
+    }
   });
 });
 

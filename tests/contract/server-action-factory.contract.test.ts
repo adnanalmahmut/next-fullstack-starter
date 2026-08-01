@@ -133,12 +133,22 @@ describe("factory boundaries", () => {
     expect(factoryImports.filter((source) => pattern.test(source))).toEqual([]);
   });
 
-  it("uses no Next.js API other than the cache", () => {
+  it("uses no Next.js API at all", () => {
+    // The factory used to call the Next.js cache APIs itself. Invalidation now
+    // belongs to one shared system in `@/platform/cache`, so an Action and a
+    // Route Handler purge the same tags through the same code, and the Action
+    // factory is left with no transport dependency of any kind.
     const nextImports = factoryImports.filter((source) =>
       /^next(?:\/|$)/.test(source),
     );
 
-    expect(nextImports).toEqual(["next/cache"]);
+    expect(nextImports).toEqual([]);
+  });
+
+  it("delegates invalidation to the shared cache platform", () => {
+    expect(
+      factoryImports.filter((source) => source.startsWith("@/platform/cache")),
+    ).toContain("@/platform/cache/cache-invalidation.server");
   });
 
   it("never redirects, mutates a cookie, or writes a response", () => {

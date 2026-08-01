@@ -136,6 +136,29 @@ REDIS_ENABLED=true REDIS_URL=redis://127.0.0.1:6380 pnpm test:redis:integration
 See [`docs/architecture/redis-foundation.md`](docs/architecture/redis-foundation.md),
 including how to remove Redis from a generated project.
 
+## Caching and Concurrency
+
+Next.js Cache Components are enabled, with three named cache-life profiles —
+`frequent`, `standard`, and `durable` — declared once and consumed by
+`next.config.ts`. A cached read declares its profile and its tags by identity:
+
+```ts
+export async function readUser(userId: string) {
+  "use cache";
+  applyCachePolicy(CACHE_PROFILE.STANDARD, userCache.detail(userId));
+
+  return userRepository.findById(userId);
+}
+```
+
+Redis adds an optional cache-aside read, a fixed-window rate limiter, an
+idempotency lifecycle, and lease locks. None of them is a correctness mechanism:
+PostgreSQL stays the source of truth, and every use declares what should happen
+when Redis is not there. Nothing in this repository is wired to them yet.
+
+See
+[`docs/architecture/cache-and-concurrency-controls.md`](docs/architecture/cache-and-concurrency-controls.md).
+
 ## Verification
 
 Ensure the test database is running:

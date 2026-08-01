@@ -799,8 +799,15 @@ describe("scope", () => {
   });
 
   it("suppresses no lint or type error and skips no test", () => {
-    const ownPath =
-      "tests/contract/authorization-admin-access-control.contract.test.ts";
+    // A contract suite that scans for a marker has to name it, and a suite that
+    // lints probe source has to embed it. Both are samples rather than
+    // suppressions, so the contract suites check each other's production scope
+    // instead of each other's text.
+    const selfDescribing = [
+      "tests/contract/authorization-admin-access-control.contract.test.ts",
+      "tests/contract/cache-concurrency-controls.contract.test.ts",
+      "tests/contract/redis-foundation.contract.test.ts",
+    ];
 
     for (const { path, source } of [
       ...sourceFiles(authorizationRoot, true),
@@ -808,8 +815,7 @@ describe("scope", () => {
       ...sourceFiles("tests/contract", true),
       ...sourceFiles("tests/integration", true),
     ]) {
-      // This file names the markers it looks for, so it excludes itself.
-      if (path === ownPath) {
+      if (selfDescribing.includes(path)) {
         continue;
       }
 

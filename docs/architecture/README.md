@@ -14,6 +14,7 @@ System-level architectural documentation lives here.
 - [Server Action Factory](./server-action-factory.md)
 - [Route Handler Factory](./route-handler-factory.md)
 - [Redis Foundation](./redis-foundation.md)
+- [Cache and Concurrency Controls](./cache-and-concurrency-controls.md)
 - [Design System](../design-system/README.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)
@@ -51,6 +52,11 @@ Current documentation covers:
 - An optional Redis foundation: disabled by default, lazily connected, health
   contract, key namespaces, isolated test suite, and a removal procedure that
   touches no business code.
+- Cache and concurrency controls: Next.js Cache Components with a closed set of
+  cache-life profiles, module-owned cache identities, Redis cache-aside, one
+  invalidation system shared by Actions and Route Handlers, an atomic
+  fixed-window rate limiter, an idempotency lifecycle, lease locks, and an
+  explicit fallback for every one of them.
 - Semantic design tokens, reusable presentation primitives, and RTL/LTR UI.
 
 Future documentation may cover:
@@ -58,7 +64,6 @@ Future documentation may cover:
 - System context.
 - Data ownership.
 - Internationalization.
-- Caching.
 - Background jobs.
 - Deployment architecture.
 

@@ -38,6 +38,7 @@ export {
 export {
   buildRedisKey,
   isValidRedisKeySegment,
+  opaqueKeySegment,
   redisNamespacePattern,
   redisScopePattern,
   redisScopePrefix,

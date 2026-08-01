@@ -8,7 +8,7 @@ import type {
 
 import type { ActionContext } from "./action-context";
 import type { ActionHooks } from "./action-hooks";
-import type { CacheInvalidation } from "./cache-invalidation.server";
+import type { CacheInvalidation } from "@/platform/cache/cache-invalidation";
 
 /**
  * The authorization vocabulary a Server Action declares.
@@ -68,8 +68,11 @@ export type ActionDefinition<
   >;
   hooks?: ActionHooks<z.output<TSchema>, ActionActor<TAuthorization>, TOutput>;
   /**
-   * Paths and tags to invalidate after the use case succeeds. Declared here and
-   * never taken from client input.
+   * Paths, tags, and Redis entries to invalidate after the use case succeeds.
+   * Declared here and never taken from client input.
+   *
+   * A Server Action is the only place the read-your-own-writes tag strategy is
+   * available, because `updateTag` is a Server Action API.
    */
   revalidate?: CacheInvalidation;
 }>;

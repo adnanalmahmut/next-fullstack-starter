@@ -17,6 +17,8 @@ import {
   requireAnyPermission,
   requirePermission,
 } from "@/platform/auth/authorization/require-permission.server";
+import { INVALIDATION_CONTEXT } from "@/platform/cache/cache-invalidation";
+import { runCacheInvalidation } from "@/platform/cache/cache-invalidation.server";
 import type { PublicError } from "@/platform/errors/public-error";
 import { toPublicError } from "@/platform/errors/to-public-error";
 import { getRequestLogger } from "@/platform/observability/logger.server";
@@ -45,7 +47,6 @@ import {
   CACHE_INVALIDATION_STEP,
   type ActionStepName,
 } from "./action-hooks";
-import { runCacheInvalidation } from "./cache-invalidation.server";
 import {
   ACTION_OUTCOME,
   SERVER_ACTION_LOG_EVENT,
@@ -279,7 +280,13 @@ export function defineAction<
       );
 
       try {
-        runCacheInvalidation(definition.revalidate);
+        // The plan reports rather than throws: one unreachable target must not
+        // stop the others from being purged, and none of them may turn a
+        // committed mutation into a failure the client would retry.
+        await runCacheInvalidation(
+          definition.revalidate,
+          INVALIDATION_CONTEXT.SERVER_ACTION,
+        );
       } catch (error) {
         logStepFailure(logBase, CACHE_INVALIDATION_STEP, error);
       }

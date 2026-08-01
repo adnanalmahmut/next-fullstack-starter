@@ -13,6 +13,7 @@ import type { StructuredLogger } from "@/platform/observability/create-logger.se
 import { REQUEST_ID_HEADER } from "@/platform/observability/request-id.server";
 import {
   ConflictError,
+  DependencyUnavailableError,
   NotFoundError,
 } from "@/shared/errors/application-error";
 import { ERROR_CODE } from "@/shared/errors/error-code";
@@ -26,11 +27,21 @@ import { ERROR_CODE } from "@/shared/errors/error-code";
  */
 const getSession = vi.fn();
 const userHasPermission = vi.fn();
+const revalidatePath = vi.fn();
+const revalidateTag = vi.fn();
 const logCalls: {
   level: string;
   fields: Record<string, unknown>;
   event: unknown;
 }[] = [];
+
+vi.mock("next/cache", () => ({
+  revalidatePath: (path: string, type?: string) => revalidatePath(path, type),
+  revalidateTag: (tag: string, profile: unknown) => revalidateTag(tag, profile),
+  updateTag: () => {
+    throw new Error("updateTag is not available in a Route Handler.");
+  },
+}));
 
 vi.mock("@/platform/auth/auth.server", () => ({
   auth: {
@@ -74,9 +85,18 @@ const { AUTHORIZATION_MODE } =
   await import("@/platform/auth/authorization/authorization-mode");
 const { getCallerHeaders } =
   await import("@/platform/auth/authorization/caller-headers.server");
-const { ROUTE_HOOK, IDEMPOTENCY_OUTCOME, RATE_LIMIT_OUTCOME } =
+const { ROUTE_HOOK, ROUTE_STEP, IDEMPOTENCY_OUTCOME, RATE_LIMIT_OUTCOME } =
   await import("./route-hooks");
 const { ROUTE_LOG_EVENT } = await import("./log-event");
+const { createCacheIdentity } = await import("@/platform/cache/cache-identity");
+const { TAG_STRATEGY } = await import("@/platform/cache/cache-invalidation");
+
+const probeIdentity = createCacheIdentity({
+  module: "identity",
+  resource: "user",
+  version: 1,
+  segments: [],
+});
 
 const REQUEST_ID = "0f1c4a0e-1d3f-4d5e-8a7b-9c0d1e2f3a4b";
 const SESSION_COOKIE = "better-auth.session_token=token-value";
@@ -142,6 +162,8 @@ function eventsOf(event: string) {
 beforeEach(() => {
   getSession.mockReset();
   userHasPermission.mockReset();
+  revalidatePath.mockReset();
+  revalidateTag.mockReset();
   getSession.mockResolvedValue(null);
   userHasPermission.mockResolvedValue({ success: false });
   logCalls.length = 0;
@@ -764,19 +786,17 @@ describe("hooks", () => {
 
         return { done: true };
       },
+      idempotency: () => {
+        order.push(ROUTE_STEP.IDEMPOTENCY);
+
+        return { outcome: IDEMPOTENCY_OUTCOME.PROCEED };
+      },
       hooks: {
         rateLimit: [
           () => {
             order.push(ROUTE_HOOK.RATE_LIMIT);
 
-            return RATE_LIMIT_OUTCOME.ALLOWED;
-          },
-        ],
-        idempotency: [
-          () => {
-            order.push(ROUTE_HOOK.IDEMPOTENCY);
-
-            return { outcome: IDEMPOTENCY_OUTCOME.PROCEED };
+            return { outcome: RATE_LIMIT_OUTCOME.ALLOWED };
           },
         ],
         beforeExecute: [
@@ -841,7 +861,7 @@ describe("hooks", () => {
       name: "probe.hooks.rate-limited",
       authorization: { mode: AUTHORIZATION_MODE.ACTOR },
       execute: executed,
-      hooks: { rateLimit: [() => RATE_LIMIT_OUTCOME.REFUSED] },
+      hooks: { rateLimit: [() => ({ outcome: RATE_LIMIT_OUTCOME.REFUSED })] },
     });
 
     const response = await handler(buildRequest(), routeContext());
@@ -855,7 +875,9 @@ describe("hooks", () => {
   });
 
   it("gives the rate-limit hook request metadata and nothing parsed", async () => {
-    const seen = vi.fn(() => RATE_LIMIT_OUTCOME.ALLOWED);
+    const seen = vi.fn(
+      () => ({ outcome: RATE_LIMIT_OUTCOME.ALLOWED }) as const,
+    );
     const handler = defineRoute({
       name: "probe.hooks.rate-limit-context",
       authorization: { mode: AUTHORIZATION_MODE.PUBLIC },
@@ -887,15 +909,11 @@ describe("hooks", () => {
       },
       successStatus: 201,
       execute: executed as () => { id: string },
-      hooks: {
-        idempotency: [
-          () => ({
-            outcome: IDEMPOTENCY_OUTCOME.REPLAY,
-            output: { id: "entity-1" },
-          }),
-        ],
-        audit: [audited],
-      },
+      idempotency: () => ({
+        outcome: IDEMPOTENCY_OUTCOME.REPLAY,
+        output: { id: "entity-1" },
+      }),
+      hooks: { audit: [audited] },
     });
 
     const response = await handler(buildRequest(), routeContext());
@@ -920,9 +938,7 @@ describe("hooks", () => {
       name: "probe.hooks.conflict",
       authorization: { mode: AUTHORIZATION_MODE.ACTOR },
       execute: executed,
-      hooks: {
-        idempotency: [() => ({ outcome: IDEMPOTENCY_OUTCOME.CONFLICT })],
-      },
+      idempotency: () => ({ outcome: IDEMPOTENCY_OUTCOME.CONFLICT }),
     });
 
     const response = await handler(buildRequest(), routeContext());
@@ -948,7 +964,7 @@ describe("hooks", () => {
         permission: PERMISSION.IDENTITY_USER_SET_ROLE,
       },
       execute: () => null,
-      hooks: { idempotency: [idempotency] },
+      idempotency,
     });
 
     const response = await handler(buildRequest(), routeContext());
@@ -1203,5 +1219,439 @@ describe("logging", () => {
       errorCode: ERROR_CODE.FORBIDDEN,
       statusCode: 403,
     });
+  });
+});
+
+describe("rate-limit refusal metadata", () => {
+  it("writes Retry-After from the hook's own number", async () => {
+    const handler = defineRoute({
+      name: "probe.rate-limit.retry-after",
+      authorization: { mode: AUTHORIZATION_MODE.PUBLIC },
+      execute: () => null,
+      hooks: {
+        rateLimit: [
+          () => ({
+            outcome: RATE_LIMIT_OUTCOME.REFUSED,
+            retryAfterMs: 12_000,
+          }),
+        ],
+      },
+    });
+
+    const response = await handler(buildRequest(), routeContext());
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("12");
+  });
+
+  it("rounds a partial second up, so a client that obeys it is not refused again", async () => {
+    const handler = defineRoute({
+      name: "probe.rate-limit.rounding",
+      authorization: { mode: AUTHORIZATION_MODE.PUBLIC },
+      execute: () => null,
+      hooks: {
+        rateLimit: [
+          () => ({ outcome: RATE_LIMIT_OUTCOME.REFUSED, retryAfterMs: 1_200 }),
+        ],
+      },
+    });
+
+    expect(
+      (await handler(buildRequest(), routeContext())).headers.get(
+        "retry-after",
+      ),
+    ).toBe("2");
+  });
+
+  it("omits the header when the limiter did not say when", async () => {
+    const handler = defineRoute({
+      name: "probe.rate-limit.no-retry-after",
+      authorization: { mode: AUTHORIZATION_MODE.PUBLIC },
+      execute: () => null,
+      hooks: { rateLimit: [() => ({ outcome: RATE_LIMIT_OUTCOME.REFUSED })] },
+    });
+
+    const response = await handler(buildRequest(), routeContext());
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBeNull();
+  });
+
+  it("writes no Retry-After on an allowed request", async () => {
+    const handler = defineRoute({
+      name: "probe.rate-limit.allowed",
+      authorization: { mode: AUTHORIZATION_MODE.PUBLIC },
+      execute: () => null,
+      hooks: {
+        rateLimit: [() => ({ outcome: RATE_LIMIT_OUTCOME.ALLOWED })],
+      },
+    });
+
+    const response = await handler(buildRequest(), routeContext());
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("retry-after")).toBeNull();
+  });
+});
+
+describe("an unavailable dependency", () => {
+  it("answers DEPENDENCY_UNAVAILABLE and 503 without running the use case", async () => {
+    const executed = vi.fn();
+    const handler = defineRoute({
+      name: "probe.dependency.rate-limit",
+      authorization: { mode: AUTHORIZATION_MODE.PUBLIC },
+      execute: executed,
+      hooks: {
+        rateLimit: [
+          () => {
+            throw new DependencyUnavailableError("The limiter is unavailable.");
+          },
+        ],
+      },
+    });
+
+    const response = await handler(buildRequest(), routeContext());
+
+    expect(response.status).toBe(503);
+    expect(await readBody(response)).toEqual({
+      error: { code: ERROR_CODE.DEPENDENCY_UNAVAILABLE },
+    });
+    expect(executed).not.toHaveBeenCalled();
+  });
+
+  it("refuses before the use case when a required idempotency store is gone", async () => {
+    signIn();
+
+    const executed = vi.fn();
+    const handler = defineRoute({
+      name: "probe.dependency.idempotency",
+      authorization: { mode: AUTHORIZATION_MODE.ACTOR },
+      execute: executed,
+      idempotency: () => {
+        throw new DependencyUnavailableError("The store is unavailable.");
+      },
+    });
+
+    const response = await handler(buildRequest(), routeContext());
+
+    expect(response.status).toBe(503);
+    expect(executed).not.toHaveBeenCalled();
+  });
+
+  it("records the refusal as expected traffic rather than a defect", async () => {
+    const handler = defineRoute({
+      name: "probe.dependency.logging",
+      authorization: { mode: AUTHORIZATION_MODE.PUBLIC },
+      execute: () => null,
+      hooks: {
+        rateLimit: [
+          () => {
+            throw new DependencyUnavailableError("The limiter is unavailable.");
+          },
+        ],
+      },
+    });
+
+    await handler(buildRequest(), routeContext());
+
+    const [failure] = eventsOf(ROUTE_LOG_EVENT.FAILED);
+
+    expect(failure?.level).toBe("warn");
+    expect(failure?.fields).toMatchObject({
+      statusCode: 503,
+      errorCode: ERROR_CODE.DEPENDENCY_UNAVAILABLE,
+    });
+  });
+});
+
+describe("the idempotency lifecycle", () => {
+  function reservedRoute(calls: string[], overrides: { fail?: boolean } = {}) {
+    return defineRoute({
+      name: "probe.idempotency.lifecycle",
+      authorization: { mode: AUTHORIZATION_MODE.ACTOR },
+      execute: () => {
+        calls.push("execute");
+
+        if (overrides.fail) {
+          throw new ConflictError("the resource is busy");
+        }
+
+        return { id: "entity-1" };
+      },
+      idempotency: () => ({
+        outcome: IDEMPOTENCY_OUTCOME.PROCEED,
+        reservation: {
+          complete: (output) => {
+            calls.push(`complete:${output.id}`);
+          },
+          abort: () => {
+            calls.push("abort");
+          },
+        },
+      }),
+      hooks: {
+        afterSuccess: [
+          () => {
+            calls.push(ROUTE_HOOK.AFTER_SUCCESS);
+          },
+        ],
+        audit: [
+          () => {
+            calls.push(ROUTE_HOOK.AUDIT);
+          },
+        ],
+      },
+    });
+  }
+
+  it("completes the reservation before the observers run", async () => {
+    signIn();
+
+    const calls: string[] = [];
+
+    await reservedRoute(calls)(buildRequest(), routeContext());
+
+    // Completion is the only post-success step whose absence changes what a
+    // client observes on a retry, so it runs closest to the commit.
+    expect(calls).toEqual([
+      "execute",
+      "complete:entity-1",
+      ROUTE_HOOK.AFTER_SUCCESS,
+      ROUTE_HOOK.AUDIT,
+    ]);
+  });
+
+  it("aborts the reservation when the use case fails", async () => {
+    signIn();
+
+    const calls: string[] = [];
+    const response = await reservedRoute(calls, { fail: true })(
+      buildRequest(),
+      routeContext(),
+    );
+
+    expect(response.status).toBe(409);
+    expect(calls).toEqual(["execute", "abort"]);
+  });
+
+  it("keeps a committed mutation successful when the completion fails", async () => {
+    signIn();
+
+    const handler = defineRoute({
+      name: "probe.idempotency.complete-failure",
+      authorization: { mode: AUTHORIZATION_MODE.ACTOR },
+      execute: () => ({ id: "entity-1" }),
+      idempotency: () => ({
+        outcome: IDEMPOTENCY_OUTCOME.PROCEED,
+        reservation: {
+          complete: () => {
+            throw new Error("the store went away");
+          },
+          abort: () => undefined,
+        },
+      }),
+    });
+
+    const response = await handler(buildRequest(), routeContext());
+
+    expect(response.status).toBe(200);
+    expect(await readBody(response)).toEqual({ data: { id: "entity-1" } });
+    expect(eventsOf(ROUTE_LOG_EVENT.HOOK_FAILED)[0]?.fields).toMatchObject({
+      hookName: ROUTE_STEP.IDEMPOTENCY,
+    });
+  });
+
+  it("keeps the original failure when the abort fails too", async () => {
+    signIn();
+
+    const handler = defineRoute({
+      name: "probe.idempotency.abort-failure",
+      authorization: { mode: AUTHORIZATION_MODE.ACTOR },
+      execute: () => {
+        throw new NotFoundError("no such entity");
+      },
+      idempotency: () => ({
+        outcome: IDEMPOTENCY_OUTCOME.PROCEED,
+        reservation: {
+          complete: () => undefined,
+          abort: () => {
+            throw new Error("the store went away");
+          },
+        },
+      }),
+    });
+
+    const response = await handler(buildRequest(), routeContext());
+
+    expect(response.status).toBe(404);
+    expect(await readBody(response)).toEqual({
+      error: { code: ERROR_CODE.NOT_FOUND },
+    });
+  });
+
+  it("settles nothing when the coordinator degraded without a reservation", async () => {
+    signIn();
+
+    const handler = defineRoute({
+      name: "probe.idempotency.degraded",
+      authorization: { mode: AUTHORIZATION_MODE.ACTOR },
+      execute: () => ({ id: "entity-1" }),
+      idempotency: () => ({ outcome: IDEMPOTENCY_OUTCOME.PROCEED }),
+    });
+
+    const response = await handler(buildRequest(), routeContext());
+
+    expect(response.status).toBe(200);
+    expect(eventsOf(ROUTE_LOG_EVENT.HOOK_FAILED)).toHaveLength(0);
+  });
+
+  it("gives the coordinator the validated input and the actor", async () => {
+    signIn();
+
+    const seen = vi.fn(
+      () => ({ outcome: IDEMPOTENCY_OUTCOME.PROCEED }) as const,
+    );
+    const handler = defineRoute({
+      name: "probe.idempotency.context",
+      input: { query: z.object({ limit: z.coerce.number() }) },
+      authorization: { mode: AUTHORIZATION_MODE.ACTOR },
+      execute: () => null,
+      idempotency: seen,
+    });
+
+    await handler(
+      buildRequest({
+        method: "POST",
+        url: "http://localhost/api/v1/probe?limit=2",
+      }),
+      routeContext(),
+    );
+
+    expect(seen).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        routeName: "probe.idempotency.context",
+        method: "POST",
+        query: { limit: 2 },
+        actor: expect.objectContaining({ userId: "user-1" }),
+        headers: expect.any(Headers),
+      }),
+    );
+  });
+});
+
+describe("post-success cache invalidation", () => {
+  it("runs after the use case and before the audit", async () => {
+    signIn();
+
+    const calls: string[] = [];
+
+    revalidatePath.mockImplementation(() => calls.push("revalidate"));
+
+    const handler = defineRoute({
+      name: "probe.revalidate.order",
+      authorization: { mode: AUTHORIZATION_MODE.ACTOR },
+      execute: () => {
+        calls.push("execute");
+
+        return null;
+      },
+      revalidate: { paths: [{ path: "/admin/users" }] },
+      hooks: {
+        afterSuccess: [
+          () => {
+            calls.push(ROUTE_HOOK.AFTER_SUCCESS);
+          },
+        ],
+        audit: [
+          () => {
+            calls.push(ROUTE_HOOK.AUDIT);
+          },
+        ],
+      },
+    });
+
+    await handler(buildRequest(), routeContext());
+
+    expect(calls).toEqual([
+      "execute",
+      ROUTE_HOOK.AFTER_SUCCESS,
+      "revalidate",
+      ROUTE_HOOK.AUDIT,
+    ]);
+  });
+
+  it("invalidates nothing after a failure", async () => {
+    signIn();
+
+    const handler = defineRoute({
+      name: "probe.revalidate.failure",
+      authorization: { mode: AUTHORIZATION_MODE.ACTOR },
+      execute: () => {
+        throw new NotFoundError("no such entity");
+      },
+      revalidate: { paths: [{ path: "/admin/users" }] },
+    });
+
+    await handler(buildRequest(), routeContext());
+
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("keeps a committed mutation successful when invalidation fails", async () => {
+    signIn();
+
+    revalidatePath.mockImplementation(() => {
+      throw new Error("revalidation is unavailable");
+    });
+
+    const handler = defineRoute({
+      name: "probe.revalidate.failure-isolated",
+      authorization: { mode: AUTHORIZATION_MODE.ACTOR },
+      execute: () => ({ id: "entity-1" }),
+      revalidate: { paths: [{ path: "/admin/users" }] },
+    });
+
+    const response = await handler(buildRequest(), routeContext());
+
+    expect(response.status).toBe(200);
+    expect(await readBody(response)).toEqual({ data: { id: "entity-1" } });
+  });
+
+  it("refuses a Server Action-only tag strategy when the route is defined", () => {
+    // `updateTag` throws inside a Route Handler, and the post-success step is the
+    // worst possible place to learn that: the mutation has already committed.
+    expect(() =>
+      defineRoute({
+        name: "probe.revalidate.read-your-own-writes",
+        authorization: { mode: AUTHORIZATION_MODE.PUBLIC },
+        execute: () => null,
+        revalidate: {
+          tags: [
+            {
+              identity: probeIdentity,
+              strategy: TAG_STRATEGY.READ_YOUR_OWN_WRITES,
+            },
+          ],
+        },
+      }),
+    ).toThrow(/only to a Server Action/);
+  });
+
+  it("accepts a stale-while-revalidate tag", async () => {
+    signIn();
+
+    const handler = defineRoute({
+      name: "probe.revalidate.tag",
+      authorization: { mode: AUTHORIZATION_MODE.ACTOR },
+      execute: () => null,
+      revalidate: { tags: [{ identity: probeIdentity }] },
+    });
+
+    await handler(buildRequest(), routeContext());
+
+    expect(revalidateTag).toHaveBeenCalledExactlyOnceWith(
+      "identity:user:v1",
+      "max",
+    );
   });
 });

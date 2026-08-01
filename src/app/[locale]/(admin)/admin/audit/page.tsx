@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { hasLocale } from "next-intl";
 import {
@@ -8,6 +9,7 @@ import {
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 
+import { type AppLocale } from "@/i18n/config";
 import { routing } from "@/i18n/routing";
 import { getActorFromHeaders } from "@/platform/auth/authorization/actor.server";
 import { listAuthorizationAudit } from "@/platform/auth/authorization/admin-audit.service.server";
@@ -21,6 +23,7 @@ import {
   resolveAuthorization,
 } from "@/platform/auth/authorization/require-permission.server";
 import { ADMIN_ROLE, USER_ROLE } from "@/platform/auth/authorization/role";
+import { LoadingState } from "@/ui/patterns/loading-state";
 import { StatusState } from "@/ui/patterns/status-state";
 
 type AdminAuditPageProps = {
@@ -69,6 +72,18 @@ export default async function AdminAuditPage({ params }: AdminAuditPageProps) {
 
   setRequestLocale(locale);
 
+  const common = await getTranslations({ locale, namespace: "Common" });
+
+  return (
+    <Suspense
+      fallback={<LoadingState variant="content" label={common("loading")} />}
+    >
+      <AdminAuditContent locale={locale} />
+    </Suspense>
+  );
+}
+
+async function AdminAuditContent({ locale }: Readonly<{ locale: AppLocale }>) {
   const requestHeaders = await headers();
   const actor = await getActorFromHeaders(requestHeaders);
   const outcome = await resolveAuthorization(actor, [

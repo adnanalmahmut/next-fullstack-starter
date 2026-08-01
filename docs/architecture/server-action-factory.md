@@ -232,19 +232,30 @@ Cache invalidation is declared, not called:
 ```ts
 revalidate: {
   paths: [{ path: "/admin/users" }, { path: "/catalog/[slug]", type: "page" }],
-  tags: [{ tag: "catalog" }],
+  tags: [{ identity: productCache.all() }],
+  redis: [productCache.detail(productId)],
 }
 ```
 
+The invalidation system itself lives in `@/platform/cache` and is shared with the
+Route Handler factory, so an Action and a route purge the same tags through the
+same code. There is one invalidation system in the repository, not two.
+
 - Invalidation runs only after the use case succeeded.
-- Paths and tags are declared in the Action definition and are never taken from
-  client input, so a caller cannot ask the server to purge an arbitrary route or
-  an unrelated tag.
+- Paths, tags, and Redis entries are declared in the Action definition and are
+  never taken from client input, so a caller cannot ask the server to purge an
+  arbitrary route or an unrelated tag.
+- A tag is named by a `CacheIdentity`, not a string, so the Next.js tag and the
+  Redis key are derived from one declaration and cannot drift.
 - Nothing is invalidated after a validation, authorization, `beforeExecute`, or
   use case failure.
 - `revalidateTag` is always called with the pinned two-argument signature. The
   default profile is `"max"`, which marks the tag stale and serves
   stale-while-revalidate. The deprecated single-argument form is never used.
+- A Server Action is the **only** place `read-your-own-writes` is available. It
+  calls `updateTag`, which expires the entry immediately so the user who just
+  saved something sees it, and which Next.js permits only inside a Server Action.
+- Every target is attempted. One failure does not cancel the rest.
 
 **These post-success steps are not transactional with the use case.** By the time
 they run, the mutation has committed. A completed mutation must not be reported
@@ -379,9 +390,10 @@ Not implemented, and out of scope for this foundation:
 - Dynamic invalidation. `revalidate` is static; a path derived from the use case
   output is not supported, which keeps a client-influenced string out of the cache
   API by construction.
-- `updateTag` and read-your-own-writes semantics.
-- A Route Handler factory, rate limiting, idempotency, retries, transactions,
-  queues, and an outbox.
+- Automatic rate limiting, idempotency, or locking. The typed adapters exist in
+  `@/platform/concurrency` and an Action definition may reach for them, but a
+  control that applied itself to every Action would be a control nobody chose.
+- Retries, transactions, queues, and an outbox.
 - A form library binding, a React hook, a toast integration, and a redirect
   abstraction.
 - Reconciliation for a lost post-success audit record.
@@ -391,6 +403,8 @@ Not implemented, and out of scope for this foundation:
 - [Error Handling Contracts](./error-handling.md)
 - [Observability Foundation](./observability.md)
 - [Authorization and Admin Access Control](./authorization-admin-access-control.md)
+- [Route Handler Factory](./route-handler-factory.md)
+- [Cache and Concurrency Controls](./cache-and-concurrency-controls.md)
 - [Layer and Module Boundaries](./layer-boundaries.md)
 - [Module Map](./module-map.md)
 - [Implementation rules](../../src/platform/actions/README.md)
