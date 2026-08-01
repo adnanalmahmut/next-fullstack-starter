@@ -775,7 +775,6 @@ describe("scope", () => {
 
     for (const packageName of [
       "ioredis",
-      "redis",
       "bullmq",
       "jsonwebtoken",
       "jose",
@@ -785,6 +784,17 @@ describe("scope", () => {
       "next-auth",
     ]) {
       expect(installed, packageName).not.toHaveProperty(packageName);
+    }
+
+    // The Redis driver is installed for the optional Redis foundation, which is
+    // disabled by default and unrelated to authorization. What matters here is
+    // unchanged: no authorization decision, session read, or audit write may
+    // reach it, so a capability is never answered from a cache.
+    for (const { path, code } of authorizationFiles) {
+      expect(/from\s+["'](?:redis|ioredis|@redis\/)/.test(code), path).toBe(
+        false,
+      );
+      expect(code.includes("@/platform/redis"), path).toBe(false);
     }
   });
 

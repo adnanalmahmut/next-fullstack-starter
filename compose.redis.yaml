@@ -1,0 +1,114 @@
+# Redis is optional. It lives in its own Compose file, under its own project
+# name, so it has a lifecycle of its own: `pnpm db:up` never starts it and
+# `pnpm redis:down` never stops PostgreSQL. A project that does not use Redis
+# deletes this file and loses nothing.
+name: ${COMPOSE_PROJECT_NAME:-next-fullstack-starter-redis}
+
+services:
+  redis:
+    image: ${REDIS_IMAGE:-redis:8.2.2-alpine}
+    container_name: ${REDIS_CONTAINER_NAME:-next-fullstack-starter-redis}
+    restart: unless-stopped
+    init: true
+
+    command:
+      - redis-server
+      - --save
+      - "60"
+      - "1"
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-256mb}
+      - --maxmemory-policy
+      - ${REDIS_MAXMEMORY_POLICY:-noeviction}
+
+    # Bound to the loopback interface. A development Redis has no
+    # authentication, so it must not be reachable from the network.
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+
+    volumes:
+      - redis_data:/data
+
+    networks:
+      - redis_network
+
+    cpus: "${REDIS_CPUS:-0.50}"
+    mem_limit: ${REDIS_MEM_LIMIT:-320m}
+    mem_reservation: ${REDIS_MEM_RESERVATION:-128m}
+    pids_limit: ${REDIS_PIDS_LIMIT:-150}
+
+    stop_grace_period: 15s
+
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "${REDIS_LOG_MAX_SIZE:-10m}"
+        max-file: "${REDIS_LOG_MAX_FILE:-3}"
+
+  redis-test:
+    profiles:
+      - test
+
+    image: ${REDIS_IMAGE:-redis:8.2.2-alpine}
+    container_name: ${REDIS_TEST_CONTAINER_NAME:-next-fullstack-starter-redis-test}
+    restart: "no"
+    init: true
+
+    # No persistence at all: a test Redis that survives a restart is a test
+    # Redis that carries yesterday's keys into today's run.
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - ${REDIS_TEST_MAXMEMORY:-128mb}
+      - --maxmemory-policy
+      - ${REDIS_TEST_MAXMEMORY_POLICY:-noeviction}
+
+    ports:
+      - "127.0.0.1:${REDIS_TEST_PORT:-6380}:6379"
+
+    tmpfs:
+      - /data
+
+    networks:
+      - redis_network
+
+    cpus: "${REDIS_TEST_CPUS:-0.50}"
+    mem_limit: ${REDIS_TEST_MEM_LIMIT:-192m}
+    mem_reservation: ${REDIS_TEST_MEM_RESERVATION:-64m}
+    pids_limit: ${REDIS_TEST_PIDS_LIMIT:-100}
+
+    stop_grace_period: 5s
+
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "${REDIS_TEST_LOG_MAX_SIZE:-5m}"
+        max-file: "${REDIS_TEST_LOG_MAX_FILE:-2}"
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  redis_network:
+    driver: bridge

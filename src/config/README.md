@@ -4,14 +4,16 @@ Application configuration is validated with Zod before it is consumed.
 
 ## Configuration Files
 
-| File                  | Version control | Purpose                                      |
-| --------------------- | --------------- | -------------------------------------------- |
-| `.env.example`        | Committed       | Documents application environment variables. |
-| `.env.local`          | Ignored         | Local development application configuration. |
-| `.env.test.local`     | Ignored         | Local test application configuration.        |
-| `compose.env.example` | Committed       | Documents Docker Compose configuration.      |
-| `compose.env`         | Ignored         | Local Docker Compose configuration.          |
-| `.secrets/`           | Ignored         | Local Docker Compose secret files.           |
+| File                        | Version control | Purpose                                             |
+| --------------------------- | --------------- | --------------------------------------------------- |
+| `.env.example`              | Committed       | Documents application environment variables.        |
+| `.env.local`                | Ignored         | Local development application configuration.        |
+| `.env.test.local`           | Ignored         | Local test application configuration.               |
+| `compose.env.example`       | Committed       | Documents Docker Compose configuration.             |
+| `compose.redis.env.example` | Committed       | Documents the optional Redis Compose configuration. |
+| `compose.redis.env`         | Ignored         | Local Redis Compose configuration.                  |
+| `compose.env`               | Ignored         | Local Docker Compose configuration.                 |
+| `.secrets/`                 | Ignored         | Local Docker Compose secret files.                  |
 
 ## Local Setup
 
@@ -132,6 +134,26 @@ pnpm db:test:up
 | `DATABASE_URL`        | Server     | Yes                | Provides the PostgreSQL connection URL.               |
 | `NODE_ENV`            | Server     | Managed by runtime | Identifies the Node.js execution mode.                |
 | `NEXT_PUBLIC_APP_URL` | Public     | Yes                | Provides the canonical HTTP or HTTPS application URL. |
+
+### Optional Redis Variables
+
+Redis is optional. With none of these set the application runs, builds, and
+passes `pnpm verify` without ever contacting Redis.
+
+| Variable                   | Visibility | Required          | Purpose                                                             |
+| -------------------------- | ---------- | ----------------- | ------------------------------------------------------------------- |
+| `REDIS_ENABLED`            | Server     | No                | Turns Redis on. `true` or `false`, default `false`.                 |
+| `REDIS_URL`                | Server     | Only when enabled | `redis://` or `rediss://` connection URL. No default.               |
+| `REDIS_KEY_PREFIX`         | Server     | No                | First segment of every key. Default `next-fullstack-starter`.       |
+| `REDIS_CONNECT_TIMEOUT_MS` | Server     | No                | Bounded connect timeout, 100-30000. Default `5000`.                 |
+| `REDIS_TEST_RUN_ID`        | Server     | No                | Isolates one test run's keys. Generated when absent.                |
+| `REDIS_TEST_WORKER_ID`     | Server     | No                | Isolates one worker of a run. Falls back to the runner's worker id. |
+
+These are deliberately absent from `serverEnvironmentSchema` and from
+`index.server.ts`. Startup never reads them, so a missing `REDIS_URL` cannot fail
+validation the way a missing `DATABASE_URL` does; `src/platform/redis/config.ts`
+reads them lazily on first use. See
+[`docs/architecture/redis-foundation.md`](../../docs/architecture/redis-foundation.md).
 
 ### Supported `APP_ENV` Values
 

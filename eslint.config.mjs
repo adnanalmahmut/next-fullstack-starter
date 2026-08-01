@@ -81,6 +81,53 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    name: "architecture/redis-driver",
+    files: ["src/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}", "tools/**/*.mjs"],
+    // Its own rule rather than a `no-restricted-imports` entry: that option is
+    // replaced wholesale by the later, more specific layer blocks, and this
+    // boundary has to hold for every file in the repository.
+    plugins: {
+      architecture: architecturePlugin,
+    },
+    rules: {
+      "architecture/no-redis-driver-import": "error",
+    },
+  },
+  {
+    name: "architecture/redis-platform",
+    files: ["src/platform/redis/**/*.{ts,tsx}"],
+    // The Redis platform owns a connection and a key contract. It must not
+    // reach persistence, business code, or rendering, and it must not build a
+    // transport response.
+    rules: {
+      "no-restricted-imports": restrictImports(
+        restrictedImportPatterns.prisma,
+        restrictedImportPatterns.database,
+        restrictedImportPatterns.postgres,
+        restrictedImportPatterns.queue,
+        restrictedImportPatterns.betterAuth,
+        restrictedImportPatterns.react,
+        restrictedImportPatterns.translations,
+        restrictedImportPatterns.next,
+        {
+          regex: "^@/platform/(?:actions|http|proxy)(?:/|$)",
+          message:
+            "The Redis platform must not depend on an application adapter.",
+        },
+        {
+          regex: "^@/(?:app|modules|ui)(?:/|$)",
+          message:
+            "The Redis platform must not depend on application routing, business modules, or UI code.",
+        },
+        {
+          regex: "^(?:\\.\\.?/)+(?:[^/]+/)*(?:app|modules|ui)(?:/|$)",
+          message:
+            "The Redis platform must not reach application routing, business modules, or UI code through relative imports.",
+        },
+      ),
+    },
+  },
+  {
     name: "architecture/server-boundaries",
     files: [
       "src/**/index.server.{ts,tsx}",
