@@ -103,6 +103,39 @@ Open `http://localhost:3000`.
 
 The development database stores data in a Docker volume. The test database uses `tmpfs` and does not persist data after its container is removed.
 
+## Optional Redis Commands
+
+Redis is optional and disabled by default. The application builds, runs, and
+passes `pnpm verify` without it. Redis runs as its own Compose project, so these
+commands never affect PostgreSQL and the `db:*` commands never affect Redis.
+
+```bash
+cp compose.redis.env.example compose.redis.env
+pnpm redis:up
+```
+
+| Command                | Purpose                                |
+| ---------------------- | -------------------------------------- |
+| `pnpm redis:up`        | Start the development Redis service.   |
+| `pnpm redis:down`      | Stop and remove the Redis services.    |
+| `pnpm redis:status`    | Display Redis service status.          |
+| `pnpm redis:logs`      | Follow development Redis logs.         |
+| `pnpm redis:test:up`   | Start the isolated test Redis service. |
+| `pnpm redis:test:down` | Remove the test Redis container.       |
+| `pnpm redis:test:logs` | Follow test Redis logs.                |
+
+Enable it by setting `REDIS_ENABLED=true` and `REDIS_URL` in `.env.local`. The
+Redis integration suite is opt-in and is not part of `pnpm verify`:
+
+```bash
+pnpm redis:test:up
+
+REDIS_ENABLED=true REDIS_URL=redis://127.0.0.1:6380 pnpm test:redis:integration
+```
+
+See [`docs/architecture/redis-foundation.md`](docs/architecture/redis-foundation.md),
+including how to remove Redis from a generated project.
+
 ## Verification
 
 Ensure the test database is running:

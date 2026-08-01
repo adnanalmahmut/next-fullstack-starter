@@ -390,6 +390,71 @@ const noRoleComparisonRule = {
   },
 };
 
+/**
+ * The one directory allowed to import a Redis driver.
+ *
+ * Redis is optional, and staying optional is a property of where its driver is
+ * reachable from. Keeping every import inside one directory is what makes
+ * removing Redis a matter of deleting that directory rather than auditing the
+ * repository for stray imports.
+ */
+export const REDIS_DRIVER_DIRECTORY = "src/platform/redis/";
+
+const redisDriverPattern = /^(?:(?:redis|ioredis)(?:\/|$)|@redis\/)/;
+
+const noRedisDriverImportRule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Restrict Redis driver imports to the Redis platform directory.",
+    },
+    schema: [],
+    messages: {
+      restrictedDriver:
+        'Do not import "{{specifier}}" here. A Redis driver may only be imported inside {{directory}}; use the controlled entry point @/platform/redis/index.server.',
+    },
+  },
+
+  create(context) {
+    const filename = context.getFilename().replaceAll("\\", "/");
+
+    if (filename.includes(REDIS_DRIVER_DIRECTORY)) {
+      return {};
+    }
+
+    function check(sourceNode) {
+      const specifier = getStaticString(sourceNode);
+
+      if (!specifier || !redisDriverPattern.test(specifier)) {
+        return;
+      }
+
+      context.report({
+        node: sourceNode,
+        messageId: "restrictedDriver",
+        data: { specifier, directory: REDIS_DRIVER_DIRECTORY },
+      });
+    }
+
+    return {
+      ImportDeclaration: (node) => check(node.source),
+      ExportNamedDeclaration: (node) => check(node.source),
+      ExportAllDeclaration: (node) => check(node.source),
+      ImportExpression: (node) => check(node.source),
+      CallExpression(node) {
+        if (
+          node.callee.type === "Identifier" &&
+          node.callee.name === "require" &&
+          node.arguments.length === 1
+        ) {
+          check(node.arguments[0]);
+        }
+      },
+    };
+  },
+};
+
 const architecturePlugin = {
   meta: {
     name: "next-fullstack-architecture",
@@ -398,6 +463,7 @@ const architecturePlugin = {
 
   rules: {
     "no-client-server-boundaries": noClientServerBoundariesRule,
+    "no-redis-driver-import": noRedisDriverImportRule,
     "no-role-comparison": noRoleComparisonRule,
     "require-server-only": requireServerOnlyRule,
   },

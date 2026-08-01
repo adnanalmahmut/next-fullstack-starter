@@ -154,6 +154,22 @@ pages, Route Handlers, Server Actions, and use cases must authenticate and
 authorize independently. The detailed policy is defined in
 [`proxy-request-pipeline.md`](./proxy-request-pipeline.md).
 
+### Redis
+
+```text
+src/platform/redis
+compose.redis.yaml
+```
+
+Responsibilities:
+
+- Provide an optional, lazily connected Redis client.
+- Own the health contract and the key namespace discipline.
+- Stay removable: no other area imports it, and no core module depends on it.
+
+Redis is disabled by default and is not part of startup configuration. The
+detailed policy is defined in [`redis-foundation.md`](./redis-foundation.md).
+
 ### Authentication
 
 ```text
@@ -335,6 +351,7 @@ pnpm verify
 - [Authentication Foundation](./authentication-foundation.md)
 - [Server Action Factory](./server-action-factory.md)
 - [Route Handler Factory](./route-handler-factory.md)
+- [Redis Foundation](./redis-foundation.md)
 - [Design System](../design-system/README.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)

@@ -13,6 +13,7 @@ System-level architectural documentation lives here.
 - [Authorization and Admin Access Control](./authorization-admin-access-control.md)
 - [Server Action Factory](./server-action-factory.md)
 - [Route Handler Factory](./route-handler-factory.md)
+- [Redis Foundation](./redis-foundation.md)
 - [Design System](../design-system/README.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)
@@ -47,6 +48,9 @@ Current documentation covers:
   authorization modes, a fixed execution order, independently validated params,
   query, and body, typed lifecycle hooks, one JSON response envelope, and
   allowlisted request logging.
+- An optional Redis foundation: disabled by default, lazily connected, health
+  contract, key namespaces, isolated test suite, and a removal procedure that
+  touches no business code.
 - Semantic design tokens, reusable presentation primitives, and RTL/LTR UI.
 
 Future documentation may cover:

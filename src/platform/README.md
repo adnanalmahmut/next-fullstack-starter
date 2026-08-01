@@ -75,6 +75,28 @@ architectural policy in
 and the versioning decision in
 [`docs/adr/0001-versioned-api-and-openapi-strategy.md`](../../docs/adr/0001-versioned-api-and-openapi-strategy.md).
 
+## Redis
+
+An optional Redis foundation is implemented under `src/platform/redis`.
+
+- `config.ts` reads the configuration lazily; nothing is validated at startup.
+- `client.server.ts` is a lazy singleton with a bounded reconnect policy, a
+  shared connection promise, and no cached rejection.
+- `health.server.ts` answers `disabled`, `healthy`, or `unhealthy` with a stable
+  code and no provider detail.
+- `namespace.ts` and `key.ts` own the closed namespace set and the only key and
+  `SCAN` pattern builder.
+- `index.server.ts` exposes the controlled server-only entry point.
+
+Redis is disabled by default and required by nothing: the application builds,
+runs, and passes `pnpm verify` with no Redis variable set. The driver may be
+imported only inside this directory, enforced by an ESLint rule and a contract
+test, so removing Redis is a matter of deleting the directory.
+
+Implementation rules are documented in [`redis/README.md`](./redis/README.md) and
+the architectural policy, including the removal procedure, in
+[`docs/architecture/redis-foundation.md`](../../docs/architecture/redis-foundation.md).
+
 ## Observability
 
 Structured logging and request correlation are implemented under

@@ -38,6 +38,21 @@ jobs:
           --health-retries 10
           --health-start-period 10s
 
+      # Redis is optional for the application. It is provisioned here so the
+      # Redis integration suite has a server, and deliberately not wired into
+      # the application: the `Verify project` and end-to-end steps below run
+      # with Redis disabled, which is what proves it is not a requirement.
+      redis:
+        image: redis:8.2.2-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 5s
+
     env:
       APP_ENV: test
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/next_fullstack_starter?schema=public
@@ -45,6 +60,10 @@ jobs:
       # Test-only value for an ephemeral CI database. Never used for a deployed
       # environment, and the application has no runtime fallback.
       BETTER_AUTH_SECRET: test-only-better-auth-secret-do-not-use-in-production
+      # The whole job runs with Redis off. Only the Redis integration step below
+      # overrides this, so a regression that made the application depend on
+      # Redis would fail `Verify project` rather than pass unnoticed.
+      REDIS_ENABLED: "false"
 
     steps:
       - name: Checkout repository
@@ -84,6 +103,15 @@ jobs:
 
       - name: Run end-to-end tests
         run: pnpm test:e2e
+
+      - name: Run Redis integration tests
+        env:
+          REDIS_ENABLED: "true"
+          REDIS_URL: redis://127.0.0.1:6379
+          # Distinct per run and per attempt, so two CI runs against one server
+          # cannot read or delete each other's keys.
+          REDIS_TEST_RUN_ID: ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: pnpm test:redis:integration
 
       - name: Upload Playwright failure artifacts
         if: ${{ failure() }}
