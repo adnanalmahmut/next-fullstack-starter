@@ -17,6 +17,7 @@ describe("HTTP error status mapping", () => {
       NOT_FOUND: 404,
       CONFLICT: 409,
       RATE_LIMITED: 429,
+      DEPENDENCY_UNAVAILABLE: 503,
       INTERNAL_ERROR: 500,
     });
   });

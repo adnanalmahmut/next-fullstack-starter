@@ -41,7 +41,8 @@ jobs:
       # Redis is optional for the application. It is provisioned here so the
       # Redis integration suite has a server, and deliberately not wired into
       # the application: the `Verify project` and end-to-end steps below run
-      # with Redis disabled, which is what proves it is not a requirement.
+      # with Redis disabled, which is what proves that caching, rate limiting,
+      # idempotency, and locks are all opt-in rather than requirements.
       redis:
         image: redis:8.2.2-alpine
         ports:
@@ -104,6 +105,9 @@ jobs:
       - name: Run end-to-end tests
         run: pnpm test:e2e
 
+      # The only step that sees a Redis server. It covers the foundation and the
+      # cache and concurrency controls built on it; the application itself is
+      # never started with Redis enabled in CI.
       - name: Run Redis integration tests
         env:
           REDIS_ENABLED: "true"

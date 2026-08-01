@@ -3,6 +3,9 @@
     "title": "قالب Next.js متكامل",
     "description": "قالب إنتاجي لبناء تطبيقات Next.js متكاملة ومتعددة اللغات."
   },
+  "Common": {
+    "loading": "جارٍ التحميل"
+  },
   "Home": {
     "title": "قالب Next.js متكامل",
     "description": "أساس إنتاجي لتطبيقات Next.js متعددة اللغات.",

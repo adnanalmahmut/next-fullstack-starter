@@ -94,11 +94,23 @@ The order is fixed and is the reason a use case can trust its arguments.
 4. Validate `params`, `query`, and `body`.
 5. Resolve the actor, when the mode needs one.
 6. Authenticate, then authorize.
-7. Run the idempotency hooks, then `beforeExecute`.
+7. Begin the idempotency lifecycle, then run `beforeExecute`.
 8. Run the use case.
-9. Run `afterSuccess`, then `audit`.
-10. Serialize the envelope.
-11. Log the completion.
+9. Complete the idempotency reservation.
+10. Run `afterSuccess`, then cache invalidation, then `audit`.
+11. Serialize the envelope.
+12. Log the completion.
+
+A failure before the use case commits runs the reverse of step 9 — the reservation
+is aborted — then `afterFailure`, then the safe response.
+
+Steps 9 and 10 all run after the mutation has committed and none of them can be
+rolled back, so their order is deliberate. **Completion first**, because it is the
+only post-success step whose absence changes what a _client_ observes on a retry.
+**Invalidation before audit**, because invalidation is what the next reader sees
+and audit is what an operator reads later. **Audit last**, because it is the step
+most likely to grow and growth there must not delay the two steps that affect
+correctness.
 
 Authorization always precedes the use case and any resource lookup, so a caller
 without the capability is refused whether or not the target exists — an authorized
@@ -107,7 +119,8 @@ is real.
 
 `execute` is unreachable when a rate limit refuses, when any part is invalid, when
 the actor is missing, when the capability is missing, when idempotency reports a
-conflict or a replay, and when a `beforeExecute` hook throws.
+conflict or a replay, when a control a definition declared as `required` is
+unavailable, and when a `beforeExecute` hook throws.
 
 ## Validation
 
@@ -154,44 +167,55 @@ Every answer under `/api/v1` is one of two JSON shapes:
 The mapping is the central one in `src/platform/http/http-response.ts`; the
 factory adds no second table.
 
-| Code                | Status |
-| ------------------- | ------ |
-| `VALIDATION_FAILED` | 400    |
-| `UNAUTHENTICATED`   | 401    |
-| `FORBIDDEN`         | 403    |
-| `NOT_FOUND`         | 404    |
-| `CONFLICT`          | 409    |
-| `RATE_LIMITED`      | 429    |
-| `INTERNAL_ERROR`    | 500    |
+| Code                     | Status |
+| ------------------------ | ------ |
+| `VALIDATION_FAILED`      | 400    |
+| `UNAUTHENTICATED`        | 401    |
+| `FORBIDDEN`              | 403    |
+| `NOT_FOUND`              | 404    |
+| `CONFLICT`               | 409    |
+| `RATE_LIMITED`           | 429    |
+| `DEPENDENCY_UNAVAILABLE` | 503    |
+| `INTERNAL_ERROR`         | 500    |
 
 `RATE_LIMITED` was added with this factory because the rate-limit hook needs to
 refuse with an answer a client can act on, and a limiter that answered `403` would
 be lying about why. `CONFLICT` covers an idempotency conflict.
 
+`DEPENDENCY_UNAVAILABLE` was added with the concurrency controls, for the case
+where a control a definition declared as `required` could not run. It is a 503
+rather than a 500 because the request was refused _before_ anything ran: nothing
+was written and the identical request may be retried. Telling a caller to slow
+down when the truth is that a dependency is down would be an answer it cannot act
+on, so an unavailable limiter with a `deny` fallback answers this and not `429`.
+
+A `429` carries `Retry-After`, in seconds, rounded up. The value comes from a
+number the rate-limit hook returned; the hook never builds a response, chooses a
+status, or sets a header of its own.
+
 ## Hooks
 
-Six typed extension points, run sequentially in declaration order within each
+Five typed extension points, run sequentially in declaration order within each
 list. The set is closed: a hook cannot be added by a call site, cannot move within
 the order, and cannot take part in the authorization decision.
 
-| Hook            | Runs                                     | Can stop the request             |
-| --------------- | ---------------------------------------- | -------------------------------- |
-| `rateLimit`     | before authentication                    | yes, with `refused`              |
-| `idempotency`   | after authorization, before the use case | yes, with `conflict` or `replay` |
-| `beforeExecute` | last before the use case                 | yes, by throwing                 |
-| `afterSuccess`  | after the use case committed             | no                               |
-| `audit`         | after `afterSuccess`                     | no                               |
-| `afterFailure`  | after a refusal or a failure             | no                               |
+| Hook            | Runs                         | Can stop the request |
+| --------------- | ---------------------------- | -------------------- |
+| `rateLimit`     | before authentication        | yes, with `refused`  |
+| `beforeExecute` | last before the use case     | yes, by throwing     |
+| `afterSuccess`  | after the use case committed | no                   |
+| `audit`         | after cache invalidation     | no                   |
+| `afterFailure`  | after a refusal or a failure | no                   |
+
+Two further steps are the factory's own rather than declarable hooks, and are
+named `idempotency` and `cacheInvalidation` in a `route.hook_failed` line.
 
 - `rateLimit` runs first on purpose: refusing an over-limit caller must not
   require reading a session or a body. It returns a decision rather than throwing,
-  so the factory owns the refusal and every limiter answers the same code.
-- `idempotency` runs _after_ authorization on purpose: a replayed answer must not
-  be served to a caller who is not allowed to have it. It returns a typed
-  `replay` output rather than a `Response`, so a replayed answer has exactly the
-  same envelope, status, and correlation header as the original, and is logged as
-  `route.replayed`.
-- `afterSuccess` is where a definition records an idempotency result.
+  so the factory owns the refusal and every limiter answers the same code. The
+  decision may carry `retryAfterMs`, which is the entire allowlist of response
+  metadata a hook may contribute.
+- `afterSuccess` is where a definition records anything else it needs to.
 - `audit` is named separately so an audit intent is visible in a definition and a
   failing audit is attributed to `audit` rather than hidden among other
   post-success work.
@@ -207,9 +231,41 @@ one still run.
 The factory writes no audit record of its own. What is worth auditing is a
 business decision and belongs to the definition.
 
-No Redis-backed limiter and no database-backed idempotency store are implemented
-here. The extension points exist; a definition that declares no hook is never
-limited and never replayed.
+## Idempotency
+
+`idempotency` is a lifecycle rather than a hook, because a lookup separate from
+its completion leaves a window in which a retry finds nothing and runs the
+operation twice. A definition supplies one coordinator; two would each claim a key
+and neither would know about the other's reservation.
+
+`begin` runs _after_ authorization on purpose: a replayed answer must not be
+served to a caller who is not allowed to have it. It answers `proceed`, `replay`,
+or `conflict`. A `replay` carries a typed output rather than a `Response`, so a
+replayed answer has exactly the same envelope, status, and correlation header as
+the original, and is logged as `route.replayed`.
+
+A `proceed` may carry a reservation with `complete` and `abort`. The factory calls
+`complete` after the use case succeeds and `abort` after it fails, and holds the
+reservation in a local — there is no shared map and nothing outlives the request.
+A `proceed` without a reservation is the degraded path a `best-effort` policy
+takes when the store is unreachable.
+
+## Cache invalidation
+
+A route declares `revalidate` the way an Action does, and the factory runs it
+after `afterSuccess`. It uses the same invalidation system, so a route and an
+Action purge the same tags through the same code.
+
+A Route Handler may not declare the `read-your-own-writes` tag strategy:
+`updateTag` is a Server Action API, and a definition that declares it is refused
+when the route is _defined_, at module load, rather than in the post-success step
+where the mutation has already committed.
+
+The Redis-backed limiter, idempotency store, and lock live in
+`@/platform/concurrency` and are documented in
+[`cache-and-concurrency-controls.md`](./cache-and-concurrency-controls.md). No
+endpoint in this repository declares one: a definition that declares no hook is
+never limited and never replayed.
 
 ## Logging
 
@@ -307,7 +363,15 @@ The versioning and description strategy is recorded in
 
 Not implemented here, and deliberately so:
 
-- A real rate-limit store, and a real idempotency store, with Redis behind them.
 - `multipart/form-data` and file upload.
 - An OpenAPI generator, a specification file, and a generated client.
-- Response caching and cache-tag invalidation on the HTTP boundary.
+- HTTP response caching and `Cache-Control` on the transport boundary. Cache-tag
+  invalidation is implemented; caching the HTTP response itself is not.
+
+## Related documentation
+
+- [Cache and Concurrency Controls](./cache-and-concurrency-controls.md)
+- [Server Action Factory](./server-action-factory.md)
+- [Error Handling Contracts](./error-handling.md)
+- [Observability Foundation](./observability.md)
+- [Authorization and Admin Access Control](./authorization-admin-access-control.md)

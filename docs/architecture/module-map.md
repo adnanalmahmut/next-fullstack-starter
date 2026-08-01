@@ -167,8 +167,42 @@ Responsibilities:
 - Own the health contract and the key namespace discipline.
 - Stay removable: no other area imports it, and no core module depends on it.
 
-Redis is disabled by default and is not part of startup configuration. The
-detailed policy is defined in [`redis-foundation.md`](./redis-foundation.md).
+Redis is disabled by default and is not part of startup configuration. Only the
+cache and concurrency areas below build on it. The detailed policy is defined in
+[`redis-foundation.md`](./redis-foundation.md).
+
+### Cache
+
+```text
+src/platform/cache
+```
+
+Responsibilities:
+
+- Own the cache identity contract and the closed set of cache-life profiles.
+- Declare a lifetime and tags inside a `"use cache"` scope.
+- Read through Redis and fall back to the source of truth.
+- Be the only place the Next.js invalidation APIs are called.
+
+PostgreSQL remains the source of truth, and business key factories belong to the
+module that owns the data.
+
+### Concurrency
+
+```text
+src/platform/concurrency
+```
+
+Responsibilities:
+
+- Count requests in a fixed window, atomically.
+- Claim, complete, and abort an idempotent attempt.
+- Coordinate work with a lease lock.
+- Adapt all three to the Route Handler factory.
+
+None of them is a correctness mechanism, and every use declares what happens when
+Redis is not there. The detailed policy for both areas is defined in
+[`cache-and-concurrency-controls.md`](./cache-and-concurrency-controls.md).
 
 ### Authentication
 
@@ -352,6 +386,7 @@ pnpm verify
 - [Server Action Factory](./server-action-factory.md)
 - [Route Handler Factory](./route-handler-factory.md)
 - [Redis Foundation](./redis-foundation.md)
+- [Cache and Concurrency Controls](./cache-and-concurrency-controls.md)
 - [Design System](../design-system/README.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)

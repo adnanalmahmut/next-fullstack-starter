@@ -43,17 +43,34 @@ export {
   type BeforeExecuteHook,
 } from "./action-hooks";
 
+/**
+ * Cache invalidation is not the Action factory's own contract.
+ *
+ * There is one invalidation system in the repository and it lives in
+ * `@/platform/cache`, so an Action and a Route Handler purge the same tags the
+ * same way. These re-exports keep an Action definition importing from one place
+ * without creating a second, competing vocabulary.
+ */
 export {
-  DEFAULT_REVALIDATE_PROFILE,
-  REVALIDATE_PATH_TYPE,
   hasCacheInvalidation,
-  runCacheInvalidation,
+  tagStrategyOf,
+  DEFAULT_REVALIDATE_PROFILE,
+  INVALIDATION_CONTEXT,
+  REVALIDATE_PATH_TYPE,
+  TAG_STRATEGY,
   type CacheInvalidation,
   type CachePathInvalidation,
   type CacheTagInvalidation,
+  type InvalidationContext,
   type RevalidatePathType,
   type RevalidateProfile,
-} from "./cache-invalidation.server";
+  type TagStrategy,
+} from "@/platform/cache/cache-invalidation";
+
+export {
+  runCacheInvalidation,
+  type CacheInvalidationReport,
+} from "@/platform/cache/cache-invalidation.server";
 
 export {
   ACTION_OUTCOME,

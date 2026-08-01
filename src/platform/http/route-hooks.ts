@@ -8,16 +8,15 @@ import type {
 import type { RouteInputSchemas } from "./route-input";
 
 /**
- * The six lifecycle hooks a route definition may declare.
+ * The five lifecycle hooks a route definition may declare.
  *
  * The set is closed. A hook cannot be added by a call site, cannot move within
  * the order, and cannot take part in the authorization decision: the factory owns
- * the order, and the two hooks that run before the use case are the only ones
+ * the order, and the two steps that run before the use case are the only ones
  * that can stop it.
  */
 export const ROUTE_HOOK = {
   RATE_LIMIT: "rateLimit",
-  IDEMPOTENCY: "idempotency",
   BEFORE_EXECUTE: "beforeExecute",
   AFTER_SUCCESS: "afterSuccess",
   AFTER_FAILURE: "afterFailure",
@@ -30,13 +29,28 @@ export const ROUTE_HOOK_NAMES: readonly RouteHookName[] =
   Object.values(ROUTE_HOOK);
 
 /**
- * What a rate-limit hook answers.
+ * The steps the factory owns rather than a definition declaring them as hooks.
  *
- * A decision rather than an exception, so the factory owns the refusal and every
- * limiter answers the same status and the same stable code. No limiter is
- * implemented in this change: the extension point exists, and a definition that
- * declares no hook is never limited.
+ * Idempotency is a lifecycle and not a hook: a reservation has to be settled
+ * after the use case, and a hook list cannot express that. Cache invalidation is
+ * the factory's own final post-success step. Both are named here so a failure
+ * can be attributed to the right place in a log line.
  */
+export const ROUTE_STEP = {
+  IDEMPOTENCY: "idempotency",
+  CACHE_INVALIDATION: "cacheInvalidation",
+} as const;
+
+export type RouteStepOnlyName = (typeof ROUTE_STEP)[keyof typeof ROUTE_STEP];
+
+/** Every step name that can appear in a `route.hook_failed` line. */
+export type RouteStepName = RouteHookName | RouteStepOnlyName;
+
+export const ROUTE_STEP_NAMES: readonly RouteStepName[] = [
+  ...ROUTE_HOOK_NAMES,
+  ...Object.values(ROUTE_STEP),
+];
+
 export const RATE_LIMIT_OUTCOME = {
   ALLOWED: "allowed",
   REFUSED: "refused",
@@ -44,6 +58,23 @@ export const RATE_LIMIT_OUTCOME = {
 
 export type RateLimitOutcome =
   (typeof RATE_LIMIT_OUTCOME)[keyof typeof RATE_LIMIT_OUTCOME];
+
+/**
+ * What a rate-limit hook answers.
+ *
+ * A decision object rather than a bare outcome, because a refusal has to be able
+ * to say *when* to come back. `retryAfterMs` is the entire allowlist of response
+ * metadata a hook may contribute: the factory turns it into `Retry-After`, and a
+ * hook never builds a `Response`, never chooses a status, and never sets a header
+ * of its own. A hook that could return headers could return any header, and the
+ * response contract would stop being the factory's.
+ */
+export type RateLimitDecision =
+  | Readonly<{ outcome: typeof RATE_LIMIT_OUTCOME.ALLOWED }>
+  | Readonly<{
+      outcome: typeof RATE_LIMIT_OUTCOME.REFUSED;
+      retryAfterMs?: number;
+    }>;
 
 /**
  * A gate that runs before authentication and before the use case.
@@ -54,36 +85,61 @@ export type RateLimitOutcome =
  */
 export type RateLimitHook = (
   context: RouteRequestContext,
-) => RateLimitOutcome | Promise<RateLimitOutcome>;
+) => RateLimitDecision | Promise<RateLimitDecision>;
 
 /**
- * What an idempotency hook answers.
+ * The settle half of an idempotency reservation.
  *
- * `replay` carries the previously produced output as a typed value, not a
- * `Response`: the hook decides *what* to answer and the factory decides *how*, so
- * a replayed answer has exactly the same envelope, status, and correlation header
- * as the original. `conflict` is the same key seen again while the first attempt
- * is still unresolved, and answers `CONFLICT`.
+ * `begin` hands these back rather than the factory carrying an opaque handle
+ * around, so the claim, the owner token, and the TTLs stay inside the closure
+ * that created them. There is no shared map to clean up and nothing for the
+ * factory to interpret: it either has a reservation to settle or it does not.
  */
+export type IdempotencyReservation<TOutput> = Readonly<{
+  complete: (output: TOutput) => void | Promise<void>;
+  abort: () => void | Promise<void>;
+}>;
+
 export const IDEMPOTENCY_OUTCOME = {
   PROCEED: "proceed",
   REPLAY: "replay",
   CONFLICT: "conflict",
 } as const;
 
+export type IdempotencyOutcome =
+  (typeof IDEMPOTENCY_OUTCOME)[keyof typeof IDEMPOTENCY_OUTCOME];
+
+/**
+ * What beginning an idempotent attempt answers.
+ *
+ * `replay` carries the previously produced output as a typed value, not a
+ * `Response`: the coordinator decides *what* to answer and the factory decides
+ * *how*, so a replayed answer has exactly the same envelope, status, and
+ * correlation header as the original. `conflict` answers `CONFLICT`.
+ *
+ * `proceed` may arrive without a reservation. That is the degraded path a
+ * `best-effort` policy takes when the store is unreachable: the use case runs,
+ * and there is simply nothing to settle afterwards.
+ */
 export type IdempotencyDecision<TOutput> =
-  | Readonly<{ outcome: typeof IDEMPOTENCY_OUTCOME.PROCEED }>
+  | Readonly<{
+      outcome: typeof IDEMPOTENCY_OUTCOME.PROCEED;
+      reservation?: IdempotencyReservation<TOutput>;
+    }>
   | Readonly<{ outcome: typeof IDEMPOTENCY_OUTCOME.REPLAY; output: TOutput }>
   | Readonly<{ outcome: typeof IDEMPOTENCY_OUTCOME.CONFLICT }>;
 
 /**
- * A gate that runs after validation and authorization and before the use case.
+ * Begins an idempotent attempt, after validation and authorization.
  *
  * It is placed there deliberately: a replayed answer must not be served to a
  * caller who is not allowed to have it, so the capability is required before a
- * stored result is looked up. No store is implemented in this change.
+ * stored result is looked up.
+ *
+ * There is at most one coordinator per route. Two would each claim a key and
+ * neither would know about the other's reservation.
  */
-export type IdempotencyHook<
+export type RouteIdempotency<
   TInput extends RouteInputSchemas,
   TActor,
   TOutput,
@@ -104,9 +160,8 @@ export type BeforeExecuteHook<TInput extends RouteInputSchemas, TActor> = (
 /**
  * An observer that runs only after the use case succeeded.
  *
- * It is where a definition records an idempotency result. It is not transactional
- * with the use case: the mutation has already committed, so throwing here is
- * recorded and the success response stands.
+ * It is not transactional with the use case: the mutation has already committed,
+ * so throwing here is recorded and the success response stands.
  */
 export type AfterSuccessHook<
   TInput extends RouteInputSchemas,
@@ -146,7 +201,6 @@ export type RouteHooks<
   TOutput,
 > = Readonly<{
   rateLimit?: readonly RateLimitHook[];
-  idempotency?: readonly IdempotencyHook<TInput, TActor, TOutput>[];
   beforeExecute?: readonly BeforeExecuteHook<TInput, TActor>[];
   afterSuccess?: readonly AfterSuccessHook<TInput, TActor, TOutput>[];
   afterFailure?: readonly AfterFailureHook<TInput, TActor>[];

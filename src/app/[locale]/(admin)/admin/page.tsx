@@ -1,8 +1,10 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { hasLocale } from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
 
+import { type AppLocale } from "@/i18n/config";
 import { routing } from "@/i18n/routing";
 import { getCurrentActor } from "@/platform/auth/authorization/actor.server";
 import { PERMISSION } from "@/platform/auth/authorization/permission-registry";
@@ -11,6 +13,7 @@ import {
   AUTHORIZATION_OUTCOME,
   resolveAuthorization,
 } from "@/platform/auth/authorization/require-permission.server";
+import { LoadingState } from "@/ui/patterns/loading-state";
 import { StatusState } from "@/ui/patterns/status-state";
 import {
   Card,
@@ -55,6 +58,9 @@ export async function generateMetadata({
  * The page re-checks its own capability rather than relying on the layout, and it
  * renders no mutation control: changing a role or revoking sessions is done
  * through the administration API in this change.
+ *
+ * The capability check reads the session, so it lives inside a `<Suspense>`
+ * boundary and the rest of the route prerenders around it.
  */
 export default async function AdminPage({ params }: AdminPageProps) {
   const { locale } = await params;
@@ -65,6 +71,18 @@ export default async function AdminPage({ params }: AdminPageProps) {
 
   setRequestLocale(locale);
 
+  const common = await getTranslations({ locale, namespace: "Common" });
+
+  return (
+    <Suspense
+      fallback={<LoadingState variant="content" label={common("loading")} />}
+    >
+      <AdminOverview locale={locale} />
+    </Suspense>
+  );
+}
+
+async function AdminOverview({ locale }: Readonly<{ locale: AppLocale }>) {
   const outcome = await resolveAuthorization(await getCurrentActor(), [
     PERMISSION.IDENTITY_ADMIN_ACCESS,
   ]);

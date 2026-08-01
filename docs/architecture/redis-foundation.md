@@ -263,25 +263,48 @@ available.
 Redis is a leaf. Removing it touches nothing that holds business logic.
 
 1. Delete `src/platform/redis`.
-2. Delete `compose.redis.yaml` and `compose.redis.env.example`.
-3. Delete `vitest.redis.config.ts` and `tests/redis`.
-4. Delete `tests/fixtures/redis.fixture.ts` and
-   `tests/contract/redis-foundation.contract.test.ts`.
-5. Delete `src/config/env/read-redis.ts`, its unit test, and the Redis section of
+2. Delete `src/platform/cache/redis-cache-aside.server.ts` and its unit test, and
+   remove its re-exports from `src/platform/cache/index.server.ts`.
+3. Delete the whole of `src/platform/concurrency`. Rate limiting, idempotency,
+   and locks are Redis implementations; nothing else depends on them.
+4. In `src/platform/cache/cache-invalidation.ts`, drop the `redis` field from
+   `CacheInvalidation`; in `cache-invalidation.server.ts`, drop the block that
+   runs it.
+5. Delete `compose.redis.yaml` and `compose.redis.env.example`.
+6. Delete `vitest.redis.config.ts` and `tests/redis`.
+7. Delete `tests/fixtures/redis.fixture.ts`,
+   `tests/contract/redis-foundation.contract.test.ts`, and the Redis sections of
+   `tests/contract/cache-concurrency-controls.contract.test.ts`.
+8. Delete `src/config/env/read-redis.ts`, its unit test, and the Redis section of
    `src/config/env/schema.ts`.
-6. In `package.json`, remove the `redis` dependency and the `redis:*` and
+9. In `package.json`, remove the `redis` dependency and the `redis:*` and
    `test:redis:integration` scripts.
-7. In `.github/workflows/ci.yml`, remove the `redis` service, the
-   `REDIS_ENABLED` job variable, and the `Run Redis integration tests` step.
-8. In `.env.example` and `src/config/README.md`, remove the Redis variables.
-9. Remove the `architecture/no-redis-driver-import` rule from
-   `tools/eslint/architecture-plugin.mjs` and the `architecture/redis-driver` and
-   `architecture/redis-platform` blocks from `eslint.config.mjs`.
-10. Delete this document and its links from `docs/architecture/README.md`,
+10. In `.github/workflows/ci.yml`, remove the `redis` service, the
+    `REDIS_ENABLED` job variable, and the `Run Redis integration tests` step.
+11. In `.env.example` and `src/config/README.md`, remove the Redis variables.
+12. Remove the `architecture/no-redis-driver-import` rule from
+    `tools/eslint/architecture-plugin.mjs`, and the `architecture/redis-driver`,
+    `architecture/redis-platform`, and `architecture/concurrency-platform` blocks
+    from `eslint.config.mjs`.
+13. Delete this document and its links from `docs/architecture/README.md`,
     `docs/architecture/module-map.md`, and `src/platform/README.md`.
+
+### What survives
+
+The Next.js side of caching is independent of Redis and stays exactly as it is:
+
+- `cacheComponents` and the `cacheLife` profiles in `next.config.ts`.
+- Cache identities, `applyCachePolicy`, `applyCacheTags`, and every cache tag.
+- Path and tag invalidation through `runCacheInvalidation`.
+
+`defineRoute` and `defineAction` need no change. They orchestrate a rate-limit
+hook, an idempotency lifecycle, and an invalidation plan, and all three are
+declarations a definition supplies — a project with no Redis simply supplies
+none.
 
 Nothing under `src/platform/auth`, `src/platform/database`,
 `src/platform/actions`, `src/platform/http`, `src/platform/proxy`,
 `src/platform/observability`, `src/app`, `src/modules`, or `src/ui` needs to
-change, because none of them imports Redis. After the removal, `pnpm verify`
-passes unchanged.
+change, because none of them imports Redis. No business code needs to change
+except code that explicitly chose a Redis adapter. After the removal,
+`pnpm verify` passes unchanged.

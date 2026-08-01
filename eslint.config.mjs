@@ -34,6 +34,16 @@ const restrictedImportPatterns = {
     regex: "^bullmq(?:/|$)",
     message: "Queue access is restricted to infrastructure adapters.",
   },
+  cache: {
+    regex: "^@/platform/cache(?:/|$)",
+    message:
+      "This layer must not depend on caching. A cached answer is not an authoritative one.",
+  },
+  concurrency: {
+    regex: "^@/platform/concurrency(?:/|$)",
+    message:
+      "This layer must not depend on the concurrency controls. Correctness belongs to the database, not to a lock or a counter.",
+  },
   betterAuth: {
     regex: "^better-auth(?:/|$)",
     message: "Better Auth must not be accessed from this architectural layer.",
@@ -66,6 +76,21 @@ function restrictImports(...patterns) {
     },
   ];
 }
+
+/**
+ * The Next.js caching APIs this project does not use.
+ *
+ * `unstable_cache` predates Cache Components and coexists badly with it: it is a
+ * second cache with its own key derivation and its own invalidation, so a project
+ * that used both would have two answers to "is this stale?". `"use cache"` and
+ * the profiles in `@/platform/cache` are the one way.
+ */
+const forbiddenCacheImports = {
+  name: "next/cache",
+  importNames: ["unstable_cache", "unstable_noStore"],
+  message:
+    "Use the `use cache` directive and @/platform/cache instead of the pre-Cache-Components APIs.",
+};
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -128,6 +153,94 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    name: "architecture/no-legacy-cache-apis",
+    files: ["src/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": ["error", { paths: [forbiddenCacheImports] }],
+    },
+  },
+  {
+    name: "architecture/cache-platform",
+    files: ["src/platform/cache/**/*.{ts,tsx}"],
+    // The cache platform owns identities, profiles, invalidation, and the
+    // cache-aside read. It must not reach persistence — a cache that could read
+    // the database itself would be the source of truth by accident — and it must
+    // not know any business vocabulary.
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [forbiddenCacheImports],
+          patterns: [
+            restrictedImportPatterns.prisma,
+            restrictedImportPatterns.database,
+            restrictedImportPatterns.postgres,
+            restrictedImportPatterns.queue,
+            restrictedImportPatterns.betterAuth,
+            restrictedImportPatterns.react,
+            restrictedImportPatterns.translations,
+            restrictedImportPatterns.concurrency,
+            {
+              regex: "^next$|^next/(?!cache$)",
+              message:
+                "The cache platform may use only the Next.js cache APIs; it must not read a request, redirect, or build a response.",
+            },
+            {
+              regex: "^@/platform/(?:actions|http|proxy|auth)(?:/|$)",
+              message:
+                "The cache platform must not depend on an application adapter or on authentication.",
+            },
+            {
+              regex: "^@/(?:app|modules|ui)(?:/|$)",
+              message:
+                "The cache platform must not depend on application routing, business modules, or UI code.",
+            },
+            {
+              regex: "^(?:\\.\\.?/)+(?:[^/]+/)*(?:app|modules|ui)(?:/|$)",
+              message:
+                "The cache platform must not reach application routing, business modules, or UI code through relative imports.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    name: "architecture/concurrency-platform",
+    files: ["src/platform/concurrency/**/*.{ts,tsx}"],
+    // The concurrency platform coordinates; it does not persist and it does not
+    // decide business outcomes. It may speak the Route Handler contract, because
+    // its adapters exist to be handed to `defineRoute`, and nothing else.
+    rules: {
+      "no-restricted-imports": restrictImports(
+        restrictedImportPatterns.prisma,
+        restrictedImportPatterns.database,
+        restrictedImportPatterns.postgres,
+        restrictedImportPatterns.queue,
+        restrictedImportPatterns.betterAuth,
+        restrictedImportPatterns.react,
+        restrictedImportPatterns.translations,
+        restrictedImportPatterns.next,
+        restrictedImportPatterns.cache,
+        {
+          regex: "^@/platform/(?:actions|proxy|auth)(?:/|$)",
+          message:
+            "The concurrency platform must not depend on the Server Action factory, the proxy, or authentication.",
+        },
+        {
+          regex: "^@/(?:app|modules|ui)(?:/|$)",
+          message:
+            "The concurrency platform must not depend on application routing, business modules, or UI code.",
+        },
+        {
+          regex: "^(?:\\.\\.?/)+(?:[^/]+/)*(?:app|modules|ui)(?:/|$)",
+          message:
+            "The concurrency platform must not reach application routing, business modules, or UI code through relative imports.",
+        },
+      ),
+    },
+  },
+  {
     name: "architecture/server-boundaries",
     files: [
       "src/**/index.server.{ts,tsx}",
@@ -150,6 +263,8 @@ const eslintConfig = defineConfig([
     files: ["src/proxy.ts", "src/platform/proxy/**/*.ts"],
     rules: {
       "no-restricted-imports": restrictImports(
+        restrictedImportPatterns.cache,
+        restrictedImportPatterns.concurrency,
         restrictedImportPatterns.react,
         restrictedImportPatterns.prisma,
         restrictedImportPatterns.database,
@@ -243,6 +358,7 @@ const eslintConfig = defineConfig([
           message:
             "The Route Handler factory may use only the Next.js request type; it must not redirect, read ambient headers, or mutate cookies.",
         },
+        restrictedImportPatterns.concurrency,
         {
           regex: "^@/platform/actions(?:/|$)",
           message:
@@ -295,6 +411,8 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.postgres,
         restrictedImportPatterns.redis,
         restrictedImportPatterns.queue,
+        restrictedImportPatterns.cache,
+        restrictedImportPatterns.concurrency,
         {
           regex: "^@/modules(?:/|$)",
           message:
@@ -340,6 +458,8 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.redis,
         restrictedImportPatterns.queue,
         restrictedImportPatterns.translations,
+        restrictedImportPatterns.cache,
+        restrictedImportPatterns.concurrency,
         {
           regex: "^@/(?:app|ui)(?:/|$)",
           message:
@@ -492,6 +612,8 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.betterAuth,
         restrictedImportPatterns.serverOnly,
         restrictedImportPatterns.translations,
+        restrictedImportPatterns.cache,
+        restrictedImportPatterns.concurrency,
         {
           regex: "^@/(?:app|config|platform|ui)(?:/|$)",
           message:
@@ -540,6 +662,8 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.betterAuth,
         restrictedImportPatterns.serverOnly,
         restrictedImportPatterns.translations,
+        restrictedImportPatterns.cache,
+        restrictedImportPatterns.concurrency,
         {
           regex: "^@/(?:app|config|platform|ui)(?:/|$)",
           message:

@@ -3,6 +3,9 @@
     "title": "Next.js Full-stack Starter",
     "description": "A production-oriented starter for multilingual full-stack Next.js applications."
   },
+  "Common": {
+    "loading": "Loading"
+  },
   "Home": {
     "title": "Next.js Full-stack Starter",
     "description": "A production-oriented foundation for multilingual Next.js applications.",

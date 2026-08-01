@@ -12,7 +12,7 @@ export type HttpErrorResponse<E extends PublicError = PublicError> = Readonly<{
 export type HttpResponse<T, E extends PublicError = PublicError> =
   HttpSuccessResponse<T> | HttpErrorResponse<E>;
 
-export type HttpErrorStatus = 400 | 401 | 403 | 404 | 409 | 429 | 500;
+export type HttpErrorStatus = 400 | 401 | 403 | 404 | 409 | 429 | 500 | 503;
 
 export const HTTP_STATUS_BY_ERROR_CODE = {
   [ERROR_CODE.VALIDATION_FAILED]: 400,
@@ -21,6 +21,9 @@ export const HTTP_STATUS_BY_ERROR_CODE = {
   [ERROR_CODE.NOT_FOUND]: 404,
   [ERROR_CODE.CONFLICT]: 409,
   [ERROR_CODE.RATE_LIMITED]: 429,
+  // 503 rather than 500: the request was refused before anything ran, so it is
+  // safe to retry, which is precisely what 503 says and 500 does not.
+  [ERROR_CODE.DEPENDENCY_UNAVAILABLE]: 503,
   [ERROR_CODE.INTERNAL_ERROR]: 500,
 } as const satisfies Record<ErrorCode, HttpErrorStatus>;
 

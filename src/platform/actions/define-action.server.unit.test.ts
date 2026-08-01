@@ -25,6 +25,7 @@ const getSession = vi.fn();
 const userHasPermission = vi.fn();
 const revalidatePath = vi.fn();
 const revalidateTag = vi.fn();
+const updateTag = vi.fn();
 const logCalls: {
   level: string;
   fields: Record<string, unknown>;
@@ -47,6 +48,7 @@ vi.mock("@/platform/auth/auth.server", () => ({
 vi.mock("next/cache", () => ({
   revalidatePath: (path: string, type?: string) => revalidatePath(path, type),
   revalidateTag: (tag: string, profile: unknown) => revalidateTag(tag, profile),
+  updateTag: (tag: string) => updateTag(tag),
 }));
 
 vi.mock("@/platform/observability/logger.server", () => {
@@ -79,8 +81,11 @@ vi.mock("@/platform/observability/logger.server", () => {
 
 const { defineAction } = await import("./define-action.server");
 const { AUTHORIZATION_MODE } = await import("./action-definition");
-const { ACTION_HOOK, CACHE_INVALIDATION_STEP } = await import("./action-hooks");
+const { ACTION_HOOK } = await import("./action-hooks");
 const { SERVER_ACTION_LOG_EVENT } = await import("./log-event");
+const { createCacheIdentity } = await import("@/platform/cache/cache-identity");
+const { TAG_STRATEGY } = await import("@/platform/cache/cache-invalidation");
+const { CACHE_LOG_EVENT } = await import("@/platform/cache/log-event");
 
 const REQUEST_ID = "0f1c4a0e-1d3f-4d5e-8a7b-9c0d1e2f3a4b";
 
@@ -139,11 +144,25 @@ function onlyEvent(event: string) {
 
 const productSchema = z.object({ title: z.string().min(3) });
 
+/**
+ * A module-owned identity, declared here rather than in the cache platform.
+ *
+ * Business vocabulary belongs to the module that owns the data; the platform
+ * only knows how to validate an identity and turn it into a tag or a key.
+ */
+const catalogIdentity = createCacheIdentity({
+  module: "catalog",
+  resource: "product",
+  version: 1,
+  segments: [],
+});
+
 beforeEach(() => {
   getSession.mockReset();
   userHasPermission.mockReset();
   revalidatePath.mockReset();
   revalidateTag.mockReset();
+  updateTag.mockReset();
   logCalls.length = 0;
   signOut();
   grant();
@@ -947,7 +966,7 @@ describe("cache invalidation", () => {
       execute: () => "created",
       revalidate: {
         paths: [{ path: "/catalog" }],
-        tags: [{ tag: "catalog" }],
+        tags: [{ identity: catalogIdentity }],
       },
     });
 
@@ -956,7 +975,53 @@ describe("cache invalidation", () => {
       "/catalog",
       undefined,
     );
-    expect(revalidateTag).toHaveBeenCalledExactlyOnceWith("catalog", "max");
+    expect(revalidateTag).toHaveBeenCalledExactlyOnceWith(
+      "catalog:product:v1",
+      "max",
+    );
+    expect(updateTag).not.toHaveBeenCalled();
+  });
+
+  it("expires a tag immediately when the Action asks to read its own write", async () => {
+    const action = defineAction({
+      name: "catalog.product.create",
+      input: z.object({}),
+      authorization: { mode: AUTHORIZATION_MODE.PUBLIC },
+      execute: () => "created",
+      revalidate: {
+        tags: [
+          {
+            identity: catalogIdentity,
+            strategy: TAG_STRATEGY.READ_YOUR_OWN_WRITES,
+          },
+        ],
+      },
+    });
+
+    await expect(action({})).resolves.toEqual({ ok: true, data: "created" });
+    expect(updateTag).toHaveBeenCalledExactlyOnceWith("catalog:product:v1");
+    expect(revalidateTag).not.toHaveBeenCalled();
+  });
+
+  it("attempts every target even after one of them fails", async () => {
+    revalidatePath.mockImplementationOnce(() => {
+      throw new Error("the first target is unavailable");
+    });
+
+    const action = defineAction({
+      name: "catalog.product.create",
+      input: z.object({}),
+      authorization: { mode: AUTHORIZATION_MODE.PUBLIC },
+      execute: () => "created",
+      revalidate: {
+        paths: [{ path: "/catalog" }, { path: "/catalog/latest" }],
+        tags: [{ identity: catalogIdentity }],
+      },
+    });
+
+    await expect(action({})).resolves.toEqual({ ok: true, data: "created" });
+    expect(revalidatePath).toHaveBeenCalledTimes(2);
+    expect(revalidateTag).toHaveBeenCalledOnce();
   });
 
   it.each([
@@ -1033,11 +1098,15 @@ describe("cache invalidation", () => {
     });
 
     await expect(action({})).resolves.toEqual({ ok: true, data: "created" });
-    expect(onlyEvent(SERVER_ACTION_LOG_EVENT.HOOK_FAILED).fields).toEqual({
-      actionName: "catalog.product.create",
-      hookName: CACHE_INVALIDATION_STEP,
+
+    // The failure is reported by the invalidation system rather than by the
+    // factory, so there is one line for it wherever invalidation runs from.
+    expect(onlyEvent(CACHE_LOG_EVENT.INVALIDATION_FAILED).fields).toEqual({
+      module: "cache",
+      operation: "cache-invalidation",
       errorCode: ERROR_CODE.INTERNAL_ERROR,
     });
+    expect(eventsNamed(SERVER_ACTION_LOG_EVENT.HOOK_FAILED)).toHaveLength(0);
   });
 });
 

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { RedisNamespace } from "./namespace";
 
 /**
@@ -47,6 +49,39 @@ export function isValidRedisKeySegment(value: unknown): value is string {
     value.length <= MAX_SEGMENT_LENGTH &&
     segmentPattern.test(value)
   );
+}
+
+/**
+ * The length of an opaque segment.
+ *
+ * 32 hexadecimal characters is 128 bits of a SHA-256 digest: far beyond any
+ * collision that matters for a key, and short enough that several of them fit
+ * inside one key or one cache tag.
+ */
+const OPAQUE_SEGMENT_LENGTH = 32;
+
+/**
+ * Turns a sensitive value into a segment that discloses nothing.
+ *
+ * An email address, an IP address, a session id, a token, or an idempotency key
+ * must never appear in a key: keys are readable by anyone with access to the
+ * server, and they surface in traces and in `SCAN` output. Hashing keeps the
+ * only property a key needs — the same input yields the same segment — while
+ * making the segment useless to a reader.
+ *
+ * This is not a password hash and must not be used as one. It is unsalted, which
+ * is deliberate: a key has to be derivable by every process, so a per-process
+ * salt would make the same subject produce a different key on every server.
+ */
+export function opaqueKeySegment(value: string): string {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error("An opaque key segment requires a non-empty value.");
+  }
+
+  return createHash("sha256")
+    .update(value, "utf8")
+    .digest("hex")
+    .slice(0, OPAQUE_SEGMENT_LENGTH);
 }
 
 /**

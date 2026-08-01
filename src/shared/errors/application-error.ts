@@ -59,6 +59,23 @@ export class RateLimitedError extends ApplicationError {
   }
 }
 
+/**
+ * A capability the request required could not be reached.
+ *
+ * It is thrown only where a caller has explicitly declared that it cannot
+ * proceed without that capability — a `required` idempotency scope, a `required`
+ * lock, a rate limiter whose fallback is `deny`. A caller that declared
+ * `best-effort` never produces this: it degrades instead.
+ *
+ * The distinction matters because the refusal is safe. The use case did not run,
+ * so nothing was written, and a client may retry the identical request.
+ */
+export class DependencyUnavailableError extends ApplicationError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(ERROR_CODE.DEPENDENCY_UNAVAILABLE, message, options);
+  }
+}
+
 export class InternalError extends ApplicationError {
   constructor(message: string, options?: ErrorOptions) {
     super(ERROR_CODE.INTERNAL_ERROR, message, options);
