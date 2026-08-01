@@ -13,6 +13,7 @@ import {
   toAdminUserDtos,
 } from "./admin-user-dto";
 import { toApplicationError } from "./api-error-mapping";
+import { requireCallerHeaders } from "./caller-headers.server";
 import { PERMISSION } from "./permission-registry";
 import { requirePermission } from "./require-permission.server";
 import { isAuthorizationRole } from "./role";
@@ -32,8 +33,22 @@ import { isAuthorizationRole } from "./role";
  */
 export type AdminOperationContext = Readonly<{
   actor: Actor;
-  headers: Headers;
+  /**
+   * The caller's headers, for delegating to Better Auth on their behalf.
+   *
+   * Optional because a Route Handler must not hand transport data to a use case.
+   * When it is omitted the headers are read from the request scope the Route
+   * Handler factory opened; outside a request there is no caller, and
+   * `requireCallerHeaders` refuses rather than acting without one. A caller that
+   * already holds a verified header set — an integration test, or a service
+   * composing another — may still pass it explicitly.
+   */
+  headers?: Headers;
 }>;
+
+export function callerHeaders(context: AdminOperationContext): Headers {
+  return context.headers ?? requireCallerHeaders();
+}
 
 async function callProvider<TResult>(
   operation: () => Promise<TResult>,
@@ -53,7 +68,7 @@ export async function listAdminUsers(
 
   const result = await callProvider(() =>
     auth.api.listUsers({
-      headers: context.headers,
+      headers: callerHeaders(context),
       query: {
         limit: query.limit,
         offset: query.offset,
@@ -87,7 +102,7 @@ export async function getAdminUser(
   return toAdminUserDto(
     await callProvider(() =>
       auth.api.getUser({
-        headers: context.headers,
+        headers: callerHeaders(context),
         query: { id: targetUserId },
       }),
     ),
@@ -112,7 +127,7 @@ export async function setAdminUserRole(
 
   const result = await callProvider(() =>
     auth.api.setRole({
-      headers: context.headers,
+      headers: callerHeaders(context),
       body: {
         userId: targetUserId,
         role,
@@ -131,7 +146,7 @@ export async function revokeAdminUserSessions(
 
   await callProvider(() =>
     auth.api.revokeUserSessions({
-      headers: context.headers,
+      headers: callerHeaders(context),
       body: { userId: targetUserId },
     }),
   );

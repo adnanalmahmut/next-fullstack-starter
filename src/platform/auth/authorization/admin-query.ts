@@ -58,6 +58,28 @@ export type AdminAuditQuery = z.output<typeof adminAuditQuerySchema>;
 
 const userIdSchema = z.string().trim().min(1).max(255);
 
+/**
+ * The target identifier, taken from the request path and never from a body.
+ *
+ * A route declares this as its `params` schema, so the identifier is validated by
+ * the same boundary that validates everything else and the handler never reads a
+ * raw path segment.
+ */
+const adminUserParamsSchema = z
+  .object({
+    userId: userIdSchema,
+  })
+  .strict();
+
+export type AdminUserParams = z.output<typeof adminUserParamsSchema>;
+
+/**
+ * The requested role in a role-change body.
+ *
+ * The value stays a plain string here on purpose: whether it is an approved role
+ * is a policy decision, not an input-shape decision, so the policy owns it and
+ * answers with the status a caller should see.
+ */
 const setRoleBodySchema = z
   .object({
     role: z.string(),
@@ -65,6 +87,20 @@ const setRoleBodySchema = z
   .strict();
 
 export type SetRoleBody = z.output<typeof setRoleBodySchema>;
+
+/**
+ * The schemas the Route Handler factory validates each part of a request with.
+ *
+ * They are exported as schemas rather than as parse functions because the factory
+ * owns parsing: a route declares what a part must look like and never calls a
+ * parser itself.
+ */
+export const adminInputSchemas = {
+  usersQuery: adminUsersQuerySchema,
+  auditQuery: adminAuditQuerySchema,
+  userParams: adminUserParamsSchema,
+  setRoleBody: setRoleBodySchema,
+} as const;
 
 function parse<TOutput>(schema: z.ZodType<TOutput>, value: unknown): TOutput {
   const result = schema.safeParse(value);
@@ -76,33 +112,16 @@ function parse<TOutput>(schema: z.ZodType<TOutput>, value: unknown): TOutput {
   return result.data;
 }
 
+/**
+ * The defaulted query a Server Component renders its first page with.
+ *
+ * A page has no search parameters to validate; it needs the same bounds the API
+ * applies, resolved from the same schema.
+ */
 export function parseAdminUsersQuery(value: unknown): AdminUsersQuery {
   return parse(adminUsersQuerySchema, value);
 }
 
 export function parseAdminAuditQuery(value: unknown): AdminAuditQuery {
   return parse(adminAuditQuerySchema, value);
-}
-
-/** Validates a target identifier taken from the request path, never from a body. */
-export function parseTargetUserId(value: unknown): string {
-  return parse(userIdSchema, value);
-}
-
-/**
- * Reads the requested role from a request body.
- *
- * The value stays a plain string here on purpose: whether it is an approved role
- * is a policy decision, not an input-shape decision, so the policy owns it and
- * answers with the status a caller should see.
- */
-export function parseSetRoleBody(value: unknown): SetRoleBody {
-  return parse(setRoleBodySchema, value);
-}
-
-/** Turns URL search parameters into a plain object for validation. */
-export function toQueryRecord(
-  searchParams: URLSearchParams,
-): Record<string, string> {
-  return Object.fromEntries(searchParams);
 }

@@ -87,11 +87,11 @@ function sourceFiles(root: string, includeTests = false) {
 const authorizationFiles = sourceFiles(authorizationRoot);
 const appFiles = sourceFiles("src/app");
 const adminApiRoutes = [
-  "src/app/api/admin/users/route.ts",
-  "src/app/api/admin/users/[userId]/route.ts",
-  "src/app/api/admin/users/[userId]/role/route.ts",
-  "src/app/api/admin/users/[userId]/sessions/revoke/route.ts",
-  "src/app/api/admin/audit/route.ts",
+  "src/app/api/v1/admin/users/route.ts",
+  "src/app/api/v1/admin/users/[userId]/route.ts",
+  "src/app/api/v1/admin/users/[userId]/role/route.ts",
+  "src/app/api/v1/admin/users/[userId]/sessions/revoke/route.ts",
+  "src/app/api/v1/admin/audit/route.ts",
 ];
 const adminPages = [
   "src/app/[locale]/(admin)/admin/layout.tsx",
@@ -399,28 +399,40 @@ describe("administration API", () => {
     for (const path of adminApiRoutes) {
       const code = stripComments(read(path));
 
-      expect(code.includes("getActorFromHeaders"), path).toBe(true);
-      expect(code.includes("requirePermission"), path).toBe(true);
+      // The route declares its requirement and the factory enforces it. A
+      // declaration is what makes the check impossible to forget: a definition
+      // without an `authorization` mode does not compile.
+      expect(code.includes("defineRoute("), path).toBe(true);
+      expect(code.includes("authorization:"), path).toBe(true);
+      expect(code.includes("AUTHORIZATION_MODE.PERMISSION"), path).toBe(true);
       expect(code.includes("PERMISSION."), path).toBe(true);
     }
   });
 
-  it("requires the capability before it reads the target identifier", () => {
+  it("names a registry capability rather than a literal", () => {
     for (const path of adminApiRoutes) {
       const code = stripComments(read(path));
-      // Imports are alphabetical, so only the handler body can show the order in
-      // which the checks actually run.
-      const body = code.slice(code.indexOf("export async function"));
-      const capabilityAt = body.indexOf("requirePermission(");
-      const targetAt = body.indexOf("parseTargetUserId(");
 
-      if (targetAt < 0) {
-        continue;
-      }
-
-      expect(capabilityAt, path).toBeGreaterThanOrEqual(0);
-      expect(capabilityAt, path).toBeLessThan(targetAt);
+      expect(/permission:\s*PERMISSION\.[A-Z_]+/.test(code), path).toBe(true);
+      expect(/permission:\s*["']/.test(code), path).toBe(false);
     }
+  });
+
+  it("requires the capability before it reads the target identifier", () => {
+    // The order is a property of the factory, not of any one route: it resolves
+    // the actor and requires the capability before `execute` runs, so a target
+    // identifier is never loaded for a caller who may not have it.
+    const factory = stripComments(
+      read("src/platform/http/define-route.server.ts"),
+    );
+    const body = factory.slice(
+      factory.indexOf("return async function runRoute"),
+    );
+    const authorizeAt = body.indexOf("authorizeActor(");
+    const executeAt = body.indexOf("definition.execute(");
+
+    expect(authorizeAt).toBeGreaterThanOrEqual(0);
+    expect(executeAt).toBeGreaterThan(authorizeAt);
   });
 
   it("keeps persistence, role comparison, and provider errors out of the routes", () => {
@@ -436,25 +448,33 @@ describe("administration API", () => {
   });
 
   it("answers through the shared error contract", () => {
+    // Serialization moved into the factory, so a route neither builds a response
+    // nor maps an error; proving it never does is the stronger assertion.
     for (const path of adminApiRoutes) {
       const code = stripComments(read(path));
 
-      expect(code.includes("jsonError"), path).toBe(true);
-      expect(
-        code.includes("jsonSuccess") || code.includes("jsonNoContent"),
-        path,
-      ).toBe(true);
+      expect(code.includes("jsonError"), path).toBe(false);
+      expect(code.includes("jsonSuccess"), path).toBe(false);
+      expect(/\btry\s*\{/.test(code), path).toBe(false);
+      expect(code.includes("Response"), path).toBe(false);
     }
+
+    const factory = stripComments(
+      read("src/platform/http/define-route.server.ts"),
+    );
+
+    expect(factory.includes("jsonError")).toBe(true);
+    expect(factory.includes("jsonSuccess")).toBe(true);
   });
 
   it("validates its own input", () => {
     for (const path of adminApiRoutes) {
       const code = stripComments(read(path));
 
-      expect(
-        /parseAdmin\w+Query|parseTargetUserId|parseSetRoleBody/.test(code),
-        path,
-      ).toBe(true);
+      expect(code.includes("input:"), path).toBe(true);
+      expect(/adminInputSchemas\.\w+/.test(code), path).toBe(true);
+      // The schema is declared; the factory is what parses it.
+      expect(/\.(?:safe)?[pP]arse(?:Async)?\(/.test(code), path).toBe(false);
     }
   });
 
@@ -547,8 +567,8 @@ describe("proxy classification", () => {
     { pathname: "/ar/administrator", area: "unknown" },
     { pathname: "/en/administer", area: "unknown" },
     { pathname: "/ar/admin-tools", area: "unknown" },
-    { pathname: "/api/admin/users", area: "api" },
-    { pathname: "/api/admin/audit", area: "api" },
+    { pathname: "/api/v1/admin/users", area: "api" },
+    { pathname: "/api/v1/admin/audit", area: "api" },
   ])("classifies $pathname as $area", ({ pathname, area }) => {
     expect(
       classifyRoute({

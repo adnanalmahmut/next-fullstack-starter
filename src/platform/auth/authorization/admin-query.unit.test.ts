@@ -10,11 +10,9 @@ import {
   ADMIN_USERS_MAX_OFFSET,
   ADMIN_USERS_SEARCH_FIELD,
   ADMIN_USERS_SORT_FIELDS,
+  adminInputSchemas,
   parseAdminAuditQuery,
   parseAdminUsersQuery,
-  parseSetRoleBody,
-  parseTargetUserId,
-  toQueryRecord,
 } from "./admin-query";
 
 describe("parseAdminUsersQuery", () => {
@@ -142,61 +140,54 @@ describe("parseAdminAuditQuery", () => {
   });
 });
 
-describe("parseTargetUserId", () => {
+describe("userParams schema", () => {
+  const schema = adminInputSchemas.userParams;
+
   it("accepts a plausible identifier", () => {
-    expect(parseTargetUserId("user-1")).toBe("user-1");
-    expect(parseTargetUserId("  user-1  ")).toBe("user-1");
+    expect(schema.parse({ userId: "user-1" })).toEqual({ userId: "user-1" });
+    expect(schema.parse({ userId: "  user-1  " })).toEqual({
+      userId: "user-1",
+    });
   });
 
   it("refuses an empty or oversized identifier", () => {
-    expect(() => parseTargetUserId("")).toThrow(ValidationError);
-    expect(() => parseTargetUserId("   ")).toThrow(ValidationError);
-    expect(() => parseTargetUserId("a".repeat(256))).toThrow(ValidationError);
+    for (const userId of ["", "   ", "a".repeat(256)]) {
+      expect(schema.safeParse({ userId }).success).toBe(false);
+    }
   });
 
   it("refuses a non-string identifier", () => {
-    expect(() => parseTargetUserId(undefined)).toThrow(ValidationError);
-    expect(() => parseTargetUserId(null)).toThrow(ValidationError);
-    expect(() => parseTargetUserId(["user-1"])).toThrow(ValidationError);
-    expect(() => parseTargetUserId(1)).toThrow(ValidationError);
+    for (const userId of [undefined, null, ["user-1"], 1]) {
+      expect(schema.safeParse({ userId }).success).toBe(false);
+    }
+  });
+
+  it("refuses an unexpected path value", () => {
+    expect(schema.safeParse({ userId: "user-1", role: "admin" }).success).toBe(
+      false,
+    );
   });
 });
 
-describe("parseSetRoleBody", () => {
+describe("setRoleBody schema", () => {
+  const schema = adminInputSchemas.setRoleBody;
+
   it("reads the requested role as an untrusted string", () => {
-    expect(parseSetRoleBody({ role: "admin" })).toEqual({ role: "admin" });
-    expect(parseSetRoleBody({ role: "superadmin" })).toEqual({
+    expect(schema.parse({ role: "admin" })).toEqual({ role: "admin" });
+    expect(schema.parse({ role: "superadmin" })).toEqual({
       role: "superadmin",
     });
   });
 
   it("refuses a missing or non-string role", () => {
-    expect(() => parseSetRoleBody({})).toThrow(ValidationError);
-    expect(() => parseSetRoleBody({ role: ["admin"] })).toThrow(
-      ValidationError,
-    );
-    expect(() => parseSetRoleBody({ role: null })).toThrow(ValidationError);
-    expect(() => parseSetRoleBody(null)).toThrow(ValidationError);
+    for (const body of [{}, { role: ["admin"] }, { role: null }, null]) {
+      expect(schema.safeParse(body).success).toBe(false);
+    }
   });
 
   it("refuses an attempt to name the target in the body", () => {
-    expect(() =>
-      parseSetRoleBody({ role: "admin", userId: "another-user" }),
-    ).toThrow(ValidationError);
-  });
-});
-
-describe("toQueryRecord", () => {
-  it("turns search parameters into a plain object", () => {
-    expect(toQueryRecord(new URLSearchParams("limit=10&sortBy=email"))).toEqual(
-      {
-        limit: "10",
-        sortBy: "email",
-      },
-    );
-  });
-
-  it("produces an empty object for no parameters", () => {
-    expect(toQueryRecord(new URLSearchParams())).toEqual({});
+    expect(
+      schema.safeParse({ role: "admin", userId: "another-user" }).success,
+    ).toBe(false);
   });
 });

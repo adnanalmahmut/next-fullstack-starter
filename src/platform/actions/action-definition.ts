@@ -1,83 +1,38 @@
 import type * as z from "zod";
 
 import type { ActionResult } from "@/platform/actions/action-result";
-import type { Actor } from "@/platform/auth/authorization/actor";
-import type { Permission } from "@/platform/auth/authorization/permission-registry";
-import type { NonEmptyPermissions } from "@/platform/auth/authorization/require-permission.server";
+import type {
+  Authorization,
+  AuthorizedActor,
+} from "@/platform/auth/authorization/authorization-mode";
 
 import type { ActionContext } from "./action-context";
 import type { ActionHooks } from "./action-hooks";
 import type { CacheInvalidation } from "./cache-invalidation.server";
 
 /**
- * The closed set of authorization modes a Server Action may declare.
+ * The authorization vocabulary a Server Action declares.
  *
- * There is no "skip" and no escape hatch: an Action either declares itself public
- * or names what the caller must hold. A permission is always a registry
- * identifier, so an undeclared capability string cannot be requested, and the
- * two multi-permission modes take a non-empty tuple, so an empty list cannot be
- * mistaken for "no requirement".
+ * The modes are owned by the authorization module and shared with the Route
+ * Handler factory, so `permission` means exactly the same thing on a form
+ * submission and on an HTTP request. These aliases keep the Action-facing names
+ * an Action definition already uses.
  */
-export const AUTHORIZATION_MODE = {
-  PUBLIC: "public",
-  ACTOR: "actor",
-  PERMISSION: "permission",
-  ANY_PERMISSION: "any-permission",
-  ALL_PERMISSIONS: "all-permissions",
-} as const;
+export {
+  AUTHORIZATION_MODE,
+  AUTHORIZATION_MODES,
+  type ActorAuthorization,
+  type AllPermissionsAuthorization,
+  type AnyPermissionAuthorization,
+  type AuthorizationMode,
+  type PermissionAuthorization,
+  type PublicAuthorization,
+} from "@/platform/auth/authorization/authorization-mode";
 
-export type AuthorizationMode =
-  (typeof AUTHORIZATION_MODE)[keyof typeof AUTHORIZATION_MODE];
+export type ActionAuthorization = Authorization;
 
-export const AUTHORIZATION_MODES: readonly AuthorizationMode[] =
-  Object.values(AUTHORIZATION_MODE);
-
-/** No session is required. `execute` reads `actor` as `null`. */
-export type PublicAuthorization = Readonly<{
-  mode: typeof AUTHORIZATION_MODE.PUBLIC;
-}>;
-
-/** A verified session is required, with no capability beyond being signed in. */
-export type ActorAuthorization = Readonly<{
-  mode: typeof AUTHORIZATION_MODE.ACTOR;
-}>;
-
-/** The caller must hold this one capability. */
-export type PermissionAuthorization = Readonly<{
-  mode: typeof AUTHORIZATION_MODE.PERMISSION;
-  permission: Permission;
-}>;
-
-/** The caller must hold at least one of these capabilities. */
-export type AnyPermissionAuthorization = Readonly<{
-  mode: typeof AUTHORIZATION_MODE.ANY_PERMISSION;
-  permissions: NonEmptyPermissions;
-}>;
-
-/** The caller must hold every one of these capabilities. */
-export type AllPermissionsAuthorization = Readonly<{
-  mode: typeof AUTHORIZATION_MODE.ALL_PERMISSIONS;
-  permissions: NonEmptyPermissions;
-}>;
-
-export type ActionAuthorization =
-  | PublicAuthorization
-  | ActorAuthorization
-  | PermissionAuthorization
-  | AnyPermissionAuthorization
-  | AllPermissionsAuthorization;
-
-/**
- * The actor type `execute` and the hooks observe, derived from the declared mode.
- *
- * A public Action reads `null`; every other mode reads a guaranteed `Actor`. The
- * use case therefore never has to re-check whether a caller is signed in, and it
- * cannot accidentally treat a public Action as an authenticated one.
- */
 export type ActionActor<TAuthorization extends ActionAuthorization> =
-  TAuthorization["mode"] extends typeof AUTHORIZATION_MODE.PUBLIC
-    ? null
-    : Actor;
+  AuthorizedActor<TAuthorization>;
 
 /**
  * The use case call.

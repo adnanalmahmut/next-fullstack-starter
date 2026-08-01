@@ -42,6 +42,12 @@ export default defineConfig({
         test: {
           name: "integration",
           include: ["tests/integration/**/*.integration.test.{ts,tsx}"],
+          // These suites share one database, and some of them reason about a
+          // global invariant — the number of administrators the last-administrator
+          // policy protects. Two files creating administrators at the same time
+          // make that count non-deterministic, so integration files run one at a
+          // time and each cleans up the rows it created.
+          fileParallelism: false,
         },
       },
       {

@@ -48,6 +48,33 @@ Implementation rules are documented in [`actions/README.md`](./actions/README.md
 and the architectural policy in
 [`docs/architecture/server-action-factory.md`](../../docs/architecture/server-action-factory.md).
 
+## HTTP
+
+The single Route Handler adapter is implemented under `src/platform/http`.
+
+- `http-response.ts` is the response contract: the envelope types, the
+  error-code to status map, and the closed set of success statuses.
+- `json-response.ts` is the only place a value becomes a response body.
+- `request-input.ts` is the only place a query is collected and a body is read.
+- `define-route.server.ts` owns the fixed order: request context, rate limit,
+  validation, actor, authorization, idempotency, `beforeExecute`, the use case,
+  `afterSuccess`, `audit`, serialization, logging.
+- `route-definition.ts` declares the definition shape and infers each input type
+  from its own schema.
+- `log-event.ts` closes the log-field allowlist over the payload type.
+- `index.server.ts` exposes the controlled server-only entry point.
+
+Application endpoints live under `/api/v1` and are thin adapters; the Better Auth
+catch-all at `/api/auth/[...all]` is provider owned and is never wrapped. The
+adapter holds no business logic and reaches no database, repository, business
+module, or rendering API; an ESLint boundary enforces that.
+
+Implementation rules are documented in [`http/README.md`](./http/README.md), the
+architectural policy in
+[`docs/architecture/route-handler-factory.md`](../../docs/architecture/route-handler-factory.md),
+and the versioning decision in
+[`docs/adr/0001-versioned-api-and-openapi-strategy.md`](../../docs/adr/0001-versioned-api-and-openapi-strategy.md).
+
 ## Observability
 
 Structured logging and request correlation are implemented under

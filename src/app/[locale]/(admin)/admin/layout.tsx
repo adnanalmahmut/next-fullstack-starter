@@ -32,7 +32,7 @@ type AdminLayoutProps = Readonly<{
  *   denied state and the children are never rendered.
  *
  * This is a convenience boundary, not the security boundary. Every administration
- * page re-checks its own capability, and every `/api/admin` Route Handler
+ * page re-checks its own capability, and every `/api/v1/admin` Route Handler
  * authorizes independently. The proxy plays no part in the decision, and no client
  * value is consulted.
  *

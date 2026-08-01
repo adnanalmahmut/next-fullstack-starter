@@ -12,7 +12,7 @@ export type HttpErrorResponse<E extends PublicError = PublicError> = Readonly<{
 export type HttpResponse<T, E extends PublicError = PublicError> =
   HttpSuccessResponse<T> | HttpErrorResponse<E>;
 
-export type HttpErrorStatus = 400 | 401 | 403 | 404 | 409 | 500;
+export type HttpErrorStatus = 400 | 401 | 403 | 404 | 409 | 429 | 500;
 
 export const HTTP_STATUS_BY_ERROR_CODE = {
   [ERROR_CODE.VALIDATION_FAILED]: 400,
@@ -20,9 +20,23 @@ export const HTTP_STATUS_BY_ERROR_CODE = {
   [ERROR_CODE.FORBIDDEN]: 403,
   [ERROR_CODE.NOT_FOUND]: 404,
   [ERROR_CODE.CONFLICT]: 409,
+  [ERROR_CODE.RATE_LIMITED]: 429,
   [ERROR_CODE.INTERNAL_ERROR]: 500,
 } as const satisfies Record<ErrorCode, HttpErrorStatus>;
 
 export function httpStatusForError(code: ErrorCode): HttpErrorStatus {
   return HTTP_STATUS_BY_ERROR_CODE[code];
 }
+
+/**
+ * The statuses a route may answer with on success.
+ *
+ * The set is closed and a route names its own member statically, so a status can
+ * never be chosen by client input or returned by a use case.
+ */
+export type HttpSuccessStatus = 200 | 201;
+
+export const HTTP_SUCCESS_STATUS = {
+  OK: 200,
+  CREATED: 201,
+} as const satisfies Record<string, HttpSuccessStatus>;

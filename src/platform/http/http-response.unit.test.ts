@@ -16,6 +16,7 @@ describe("HTTP error status mapping", () => {
       FORBIDDEN: 403,
       NOT_FOUND: 404,
       CONFLICT: 409,
+      RATE_LIMITED: 429,
       INTERNAL_ERROR: 500,
     });
   });
@@ -26,6 +27,7 @@ describe("HTTP error status mapping", () => {
     [ERROR_CODE.FORBIDDEN, 403],
     [ERROR_CODE.NOT_FOUND, 404],
     [ERROR_CODE.CONFLICT, 409],
+    [ERROR_CODE.RATE_LIMITED, 429],
     [ERROR_CODE.INTERNAL_ERROR, 500],
   ] as const)("returns the status for %s", (code, status) => {
     expect(httpStatusForError(code)).toBe(status);

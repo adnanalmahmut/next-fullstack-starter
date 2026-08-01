@@ -91,9 +91,11 @@ async function sendJson(
         ...(requestBody === null ? {} : { body: JSON.stringify(requestBody) }),
       });
 
+      // Every `/api/v1` answer is a JSON envelope, including one with no
+      // payload; there is no empty-body status to special case.
       return {
         status: response.status,
-        body: response.status === 204 ? null : await response.json(),
+        body: await response.json(),
       };
     },
     [method, path, body ?? null] as const,
@@ -128,13 +130,13 @@ test.describe("authorization", () => {
 
     // An existing and a missing identifier answer identically.
     for (const userId of [admin.userId, MISSING_USER_ID]) {
-      expect((await readJson(page, `/api/admin/users/${userId}`)).status).toBe(
-        401,
-      );
+      expect(
+        (await readJson(page, `/api/v1/admin/users/${userId}`)).status,
+      ).toBe(401);
     }
 
-    expect((await readJson(page, "/api/admin/users")).status).toBe(401);
-    expect((await readJson(page, "/api/admin/audit")).status).toBe(401);
+    expect((await readJson(page, "/api/v1/admin/users")).status).toBe(401);
+    expect((await readJson(page, "/api/v1/admin/audit")).status).toBe(401);
   });
 
   test("refuses the administration area to a normal user in Arabic", async ({
@@ -159,14 +161,14 @@ test.describe("authorization", () => {
 
     // Neither the existing nor the missing identifier reveals anything.
     for (const userId of [admin.userId, MISSING_USER_ID]) {
-      const read = await readJson(page, `/api/admin/users/${userId}`);
+      const read = await readJson(page, `/api/v1/admin/users/${userId}`);
 
       expect(read.status).toBe(403);
       expect(read.body).toEqual({ error: { code: "FORBIDDEN" } });
 
       expect(
         (
-          await sendJson(page, "PATCH", `/api/admin/users/${userId}/role`, {
+          await sendJson(page, "PATCH", `/api/v1/admin/users/${userId}/role`, {
             role: "admin",
           })
         ).status,
@@ -176,14 +178,14 @@ test.describe("authorization", () => {
           await sendJson(
             page,
             "POST",
-            `/api/admin/users/${userId}/sessions/revoke`,
+            `/api/v1/admin/users/${userId}/sessions/revoke`,
           )
         ).status,
       ).toBe(403);
     }
 
-    expect((await readJson(page, "/api/admin/users")).status).toBe(403);
-    expect((await readJson(page, "/api/admin/audit")).status).toBe(403);
+    expect((await readJson(page, "/api/v1/admin/users")).status).toBe(403);
+    expect((await readJson(page, "/api/v1/admin/audit")).status).toBe(403);
   });
 
   test("refuses the administration area to a normal user in English", async ({
@@ -280,7 +282,7 @@ test.describe("authorization", () => {
     expect(consoleErrors).toEqual([]);
 
     // Read the target through the API, using the browser session.
-    const read = await readJson(page, `/api/admin/users/${target.userId}`);
+    const read = await readJson(page, `/api/v1/admin/users/${target.userId}`);
 
     expect(read.status).toBe(200);
     expect(read.body).toMatchObject({
@@ -289,14 +291,14 @@ test.describe("authorization", () => {
     expect(JSON.stringify(read.body)).not.toContain("password");
 
     expect(
-      (await readJson(page, `/api/admin/users/${MISSING_USER_ID}`)).status,
+      (await readJson(page, `/api/v1/admin/users/${MISSING_USER_ID}`)).status,
     ).toBe(404);
 
     // Change the role, then see the record appear in the trail.
     const roleChange = await sendJson(
       page,
       "PATCH",
-      `/api/admin/users/${target.userId}/role`,
+      `/api/v1/admin/users/${target.userId}/role`,
       { role: "admin" },
     );
 
@@ -317,10 +319,11 @@ test.describe("authorization", () => {
     const revoke = await sendJson(
       page,
       "POST",
-      `/api/admin/users/${target.userId}/sessions/revoke`,
+      `/api/v1/admin/users/${target.userId}/sessions/revoke`,
     );
 
-    expect(revoke.status).toBe(204);
+    expect(revoke.status).toBe(200);
+    expect(revoke.body).toEqual({ data: null });
 
     await page.goto("/ar/admin/audit");
     await expect(
@@ -387,23 +390,33 @@ test.describe("authorization", () => {
 
     expect(
       (
-        await sendJson(page, "PATCH", `/api/admin/users/${admin.userId}/role`, {
-          role: "admin",
-        })
+        await sendJson(
+          page,
+          "PATCH",
+          `/api/v1/admin/users/${admin.userId}/role`,
+          {
+            role: "admin",
+          },
+        )
       ).status,
     ).toBe(403);
     expect(
       (
-        await sendJson(page, "PATCH", `/api/admin/users/${admin.userId}/role`, {
-          role: "user",
-        })
+        await sendJson(
+          page,
+          "PATCH",
+          `/api/v1/admin/users/${admin.userId}/role`,
+          {
+            role: "user",
+          },
+        )
       ).status,
     ).toBe(403);
 
     const revoke = await sendJson(
       page,
       "POST",
-      `/api/admin/users/${admin.userId}/sessions/revoke`,
+      `/api/v1/admin/users/${admin.userId}/sessions/revoke`,
     );
 
     expect(revoke.status).toBe(403);
@@ -431,7 +444,7 @@ test.describe("authorization", () => {
       const response = await sendJson(
         page,
         "PATCH",
-        `/api/admin/users/${target.userId}/role`,
+        `/api/v1/admin/users/${target.userId}/role`,
         { role },
       );
 
@@ -440,7 +453,7 @@ test.describe("authorization", () => {
     }
 
     expect(
-      (await readJson(page, `/api/admin/users/${target.userId}`)).body,
+      (await readJson(page, `/api/v1/admin/users/${target.userId}`)).body,
     ).toMatchObject({ data: { roles: ["user"] } });
     expect(await findAuditRows(target.userId)).toHaveLength(0);
   });
@@ -462,7 +475,7 @@ test.describe("authorization", () => {
     const response = await sendJson(
       page,
       "PATCH",
-      `/api/admin/users/${admin.userId}/role`,
+      `/api/v1/admin/users/${admin.userId}/role`,
       { role: "user" },
     );
 
@@ -470,7 +483,7 @@ test.describe("authorization", () => {
     expect(response.body).toEqual({ error: { code: "CONFLICT" } });
 
     expect(
-      (await readJson(page, `/api/admin/users/${admin.userId}`)).body,
+      (await readJson(page, `/api/v1/admin/users/${admin.userId}`)).body,
     ).toMatchObject({ data: { roles: ["admin"] } });
     expect(await findAuditRows(admin.userId)).toHaveLength(0);
   });
@@ -560,10 +573,10 @@ test.describe("authorization", () => {
         await sendJson(
           page,
           "POST",
-          `/api/admin/users/${target.userId}/sessions/revoke`,
+          `/api/v1/admin/users/${target.userId}/sessions/revoke`,
         )
       ).status,
-    ).toBe(204);
+    ).toBe(200);
 
     // The same browser session no longer resolves; the server decides, not the
     // client.
@@ -573,6 +586,80 @@ test.describe("authorization", () => {
     );
 
     await targetContext.close();
+  });
+
+  test("answers the versioned API contract over the wire", async ({
+    page,
+    request,
+    baseURL,
+  }) => {
+    const admin = await signUpAdmin(request, baseURL ?? "", "contract-admin");
+
+    await signIn(page, "en", admin);
+
+    const propagated = "8b1d2c3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e";
+
+    // Success, refusal, and a missing record are one envelope, one status
+    // mapping, and one correlation header. There is no empty body anywhere.
+    const answers = await page.evaluate(
+      async ([requestId, missingUserId]) => {
+        const paths = [
+          "/api/v1/admin/users",
+          "/api/v1/admin/users?limit=9999",
+          `/api/v1/admin/users/${missingUserId}`,
+          "/api/v1/admin/audit",
+        ];
+
+        return Promise.all(
+          paths.map(async (path) => {
+            const response = await fetch(path, {
+              headers: { "x-request-id": requestId as string },
+            });
+
+            return {
+              path,
+              status: response.status,
+              requestId: response.headers.get("x-request-id"),
+              contentType: response.headers.get("content-type"),
+              text: await response.text(),
+            };
+          }),
+        );
+      },
+      [propagated, MISSING_USER_ID] as const,
+    );
+
+    expect(answers.map((answer) => answer.status)).toEqual([
+      200, 400, 404, 200,
+    ]);
+
+    for (const answer of answers) {
+      expect(answer.requestId, answer.path).toBe(propagated);
+      expect(answer.contentType, answer.path).toContain("application/json");
+
+      const body = JSON.parse(answer.text) as Record<string, unknown>;
+
+      expect(Object.keys(body), answer.path).toEqual([
+        answer.status < 400 ? "data" : "error",
+      ]);
+      expect(answer.text, answer.path).not.toContain("message");
+      expect(answer.text, answer.path).not.toContain("stack");
+    }
+
+    // A revocation carries no payload and still answers a JSON envelope.
+    const target = await signUp(request, baseURL ?? "", "contract-target");
+    const revoke = await sendJson(
+      page,
+      "POST",
+      `/api/v1/admin/users/${target.userId}/sessions/revoke`,
+    );
+
+    expect(revoke.status).toBe(200);
+    expect(revoke.body).toEqual({ data: null });
+
+    // The unversioned path the endpoints moved from is gone. It answers the
+    // framework's own not-found page, not an envelope, because no route exists.
+    expect((await page.goto("/api/admin/users"))?.status()).toBe(404);
   });
 
   test("keeps the earlier authentication behavior intact", async ({

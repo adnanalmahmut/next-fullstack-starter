@@ -6,6 +6,7 @@ import {
   ForbiddenError,
   InternalError,
   NotFoundError,
+  RateLimitedError,
   UnauthenticatedError,
   ValidationError,
 } from "@/shared/errors/application-error";
@@ -29,6 +30,7 @@ const API_ERROR_STATUS_BY_CODE = {
   [ERROR_CODE.FORBIDDEN]: "FORBIDDEN",
   [ERROR_CODE.NOT_FOUND]: "NOT_FOUND",
   [ERROR_CODE.CONFLICT]: "CONFLICT",
+  [ERROR_CODE.RATE_LIMITED]: "TOO_MANY_REQUESTS",
   [ERROR_CODE.INTERNAL_ERROR]: "INTERNAL_SERVER_ERROR",
 } as const satisfies Readonly<Record<ErrorCode, string>>;
 
@@ -59,6 +61,7 @@ const APPLICATION_ERROR_BY_STATUS_CODE = new Map<
   [403, (message) => new ForbiddenError(message)],
   [404, (message) => new NotFoundError(message)],
   [409, (message) => new ConflictError(message)],
+  [429, (message) => new RateLimitedError(message)],
 ]);
 
 /**

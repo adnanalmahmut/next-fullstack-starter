@@ -4,11 +4,12 @@ import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
+  RateLimitedError,
   UnauthenticatedError,
   ValidationError,
 } from "@/shared/errors/application-error";
 
-import { jsonError, jsonNoContent, jsonSuccess } from "./json-response";
+import { jsonError, jsonSuccess } from "./json-response";
 
 describe("jsonSuccess", () => {
   it("wraps the payload in the success envelope", async () => {
@@ -22,14 +23,20 @@ describe("jsonSuccess", () => {
   it("accepts an explicit status", () => {
     expect(jsonSuccess({ id: "user-1" }, 201).status).toBe(201);
   });
-});
 
-describe("jsonNoContent", () => {
-  it("answers with no body", async () => {
-    const response = jsonNoContent();
+  it("carries an empty payload as a null envelope rather than no body", async () => {
+    const response = jsonSuccess(null);
 
-    expect(response.status).toBe(204);
-    expect(await response.text()).toBe("");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ data: null });
+  });
+
+  it("writes the headers it is given alongside the body", () => {
+    const response = jsonSuccess({ id: "user-1" }, 200, {
+      "x-request-id": "request-1",
+    });
+
+    expect(response.headers.get("x-request-id")).toBe("request-1");
   });
 });
 
@@ -48,11 +55,24 @@ describe("jsonError", () => {
     { error: new ForbiddenError("denied"), status: 403, code: "FORBIDDEN" },
     { error: new NotFoundError("absent"), status: 404, code: "NOT_FOUND" },
     { error: new ConflictError("conflict"), status: 409, code: "CONFLICT" },
+    {
+      error: new RateLimitedError("too many"),
+      status: 429,
+      code: "RATE_LIMITED",
+    },
   ])("maps $code to $status", async ({ error, status, code }) => {
     const response = jsonError(error);
 
     expect(response.status).toBe(status);
     expect(await response.json()).toEqual({ error: { code } });
+  });
+
+  it("writes the headers it is given alongside the body", () => {
+    const response = jsonError(new NotFoundError("absent"), {
+      "x-request-id": "request-1",
+    });
+
+    expect(response.headers.get("x-request-id")).toBe("request-1");
   });
 
   it("hides an unexpected failure behind an internal code", async () => {
