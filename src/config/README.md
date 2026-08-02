@@ -4,16 +4,18 @@ Application configuration is validated with Zod before it is consumed.
 
 ## Configuration Files
 
-| File                        | Version control | Purpose                                             |
-| --------------------------- | --------------- | --------------------------------------------------- |
-| `.env.example`              | Committed       | Documents application environment variables.        |
-| `.env.local`                | Ignored         | Local development application configuration.        |
-| `.env.test.local`           | Ignored         | Local test application configuration.               |
-| `compose.env.example`       | Committed       | Documents Docker Compose configuration.             |
-| `compose.redis.env.example` | Committed       | Documents the optional Redis Compose configuration. |
-| `compose.redis.env`         | Ignored         | Local Redis Compose configuration.                  |
-| `compose.env`               | Ignored         | Local Docker Compose configuration.                 |
-| `.secrets/`                 | Ignored         | Local Docker Compose secret files.                  |
+| File                          | Version control | Purpose                                             |
+| ----------------------------- | --------------- | --------------------------------------------------- |
+| `.env.example`                | Committed       | Documents application environment variables.        |
+| `.env.local`                  | Ignored         | Local development application configuration.        |
+| `.env.test.local`             | Ignored         | Local test application configuration.               |
+| `compose.env.example`         | Committed       | Documents Docker Compose configuration.             |
+| `compose.redis.env.example`   | Committed       | Documents the optional Redis Compose configuration. |
+| `compose.redis.env`           | Ignored         | Local Redis Compose configuration.                  |
+| `compose.storage.env.example` | Committed       | Documents the optional MinIO Compose configuration. |
+| `compose.storage.env`         | Ignored         | Local MinIO Compose configuration.                  |
+| `compose.env`                 | Ignored         | Local Docker Compose configuration.                 |
+| `.secrets/`                   | Ignored         | Local Docker Compose secret files.                  |
 
 ## Local Setup
 
@@ -154,6 +156,38 @@ These are deliberately absent from `serverEnvironmentSchema` and from
 validation the way a missing `DATABASE_URL` does; `src/platform/redis/config.ts`
 reads them lazily on first use. See
 [`docs/architecture/redis-foundation.md`](../../docs/architecture/redis-foundation.md).
+
+### Optional Object Storage Variables
+
+Object storage is optional. With none of these set the application runs, builds,
+and passes `pnpm verify` without ever contacting an object store.
+
+| Variable                            | Visibility | Required          | Notes                                                                                        |
+| ----------------------------------- | ---------- | ----------------- | -------------------------------------------------------------------------------------------- |
+| `STORAGE_ENABLED`                   | Server     | No                | Turns storage on. `true` or `false`, default `false`.                                        |
+| `STORAGE_REGION`                    | Server     | Only when enabled | Lowercase region. `auto` for Cloudflare R2.                                                  |
+| `STORAGE_BUCKET`                    | Server     | Only when enabled | Held to the S3 naming rules. Must be private.                                                |
+| `STORAGE_ENDPOINT`                  | Server     | No                | `http` or `https`. Omitting it selects AWS S3's own regional endpoint. No localhost default. |
+| `STORAGE_ACCESS_KEY_ID`             | Server     | Paired            | Set with the secret or not at all. Omitting both selects the AWS default credential chain.   |
+| `STORAGE_SECRET_ACCESS_KEY`         | Server     | Paired            | Never exposed to the browser and never logged.                                               |
+| `STORAGE_SESSION_TOKEN`             | Server     | No                | Only alongside a complete pair.                                                              |
+| `STORAGE_FORCE_PATH_STYLE`          | Server     | No                | `true` for MinIO. Default `false`.                                                           |
+| `STORAGE_KEY_PREFIX`                | Server     | No                | First segment of every key. Default `next-fullstack-starter`.                                |
+| `STORAGE_CONNECT_TIMEOUT_MS`        | Server     | No                | Bounded, 100-30000. Default `5000`.                                                          |
+| `STORAGE_REQUEST_TIMEOUT_MS`        | Server     | No                | Bounded, 100-120000. Default `15000`.                                                        |
+| `STORAGE_UPLOAD_URL_TTL_SECONDS`    | Server     | No                | Must not exceed the intent lifetime. Default `900`.                                          |
+| `STORAGE_DOWNLOAD_URL_TTL_SECONDS`  | Server     | No                | The ceiling a caller's request is clamped to. Default `300`.                                 |
+| `STORAGE_UPLOAD_INTENT_TTL_SECONDS` | Server     | No                | How long an authorization lives. Default `900`.                                              |
+| `STORAGE_FINALIZE_LEASE_MS`         | Server     | No                | Must be shorter than the intent lifetime. Default `30000`.                                   |
+| `STORAGE_MAX_UPLOAD_BYTES`          | Server     | No                | Capped at 5 GiB. Default `26214400`.                                                         |
+| `STORAGE_TEST_RUN_ID`               | Server     | No                | Isolates one test run's keys. Generated when absent.                                         |
+
+They are declared in `schema.ts` as `storageEnvironmentSchema` and read by
+`read-storage.ts`, and are deliberately absent from `index.server.ts`. Startup
+never reads them, so a missing `STORAGE_BUCKET` cannot fail validation the way a
+missing `DATABASE_URL` does; `src/platform/storage/config.ts` reads them lazily
+on first use. The full policy is in
+[`docs/architecture/object-storage-and-uploads.md`](../../docs/architecture/object-storage-and-uploads.md).
 
 ### Optional Background-Jobs Variables
 

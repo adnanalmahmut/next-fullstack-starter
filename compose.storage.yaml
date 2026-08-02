@@ -1,0 +1,134 @@
+# Object storage is optional. It lives in its own Compose file, under its own
+# project name, so it has a lifecycle of its own: `pnpm db:up` never starts it,
+# `pnpm redis:up` never starts it, and `pnpm storage:down` never stops
+# PostgreSQL or Redis. A project that stores no files deletes this file and
+# loses nothing.
+#
+# MinIO is an S3-compatible server, so it exercises the same adapter, the same
+# presigned POST policy, and the same conditional copy that AWS S3 and
+# Cloudflare R2 do. The image is pinned to a release rather than tracking
+# `latest`: an object store that silently changed version between two CI runs
+# would make an integration failure impossible to attribute.
+name: ${COMPOSE_PROJECT_NAME:-next-fullstack-starter-storage}
+
+services:
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-09-07T16-13-09Z}
+    container_name: ${MINIO_CONTAINER_NAME:-next-fullstack-starter-minio}
+    restart: unless-stopped
+    init: true
+
+    command:
+      - server
+      - /data
+      - --console-address
+      - ":9001"
+
+    environment:
+      # Development credentials, supplied from `compose.storage.env`, which is
+      # not committed. There is no default here on purpose: a well-known
+      # username and password baked into a Compose file is how a development
+      # object store ends up deployed.
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in compose.storage.env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in compose.storage.env}
+      # No anonymous access, ever. A bucket in this project is private, and the
+      # application never issues a public URL — every download is a short-lived
+      # signature.
+      MINIO_BROWSER_REDIRECT: "off"
+
+    # Both ports are bound to the loopback interface. A development object
+    # store holds real files and has development credentials; it must not be
+    # reachable from the network.
+    ports:
+      - "127.0.0.1:${MINIO_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+
+    volumes:
+      - minio_data:/data
+
+    networks:
+      - storage_network
+
+    cpus: "${MINIO_CPUS:-1.00}"
+    mem_limit: ${MINIO_MEM_LIMIT:-768m}
+    mem_reservation: ${MINIO_MEM_RESERVATION:-256m}
+    pids_limit: ${MINIO_PIDS_LIMIT:-200}
+
+    stop_grace_period: 15s
+
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "${MINIO_LOG_MAX_SIZE:-10m}"
+        max-file: "${MINIO_LOG_MAX_FILE:-3}"
+
+  minio-test:
+    profiles:
+      - test
+
+    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-09-07T16-13-09Z}
+    container_name: ${MINIO_TEST_CONTAINER_NAME:-next-fullstack-starter-minio-test}
+    restart: "no"
+    init: true
+
+    command:
+      - server
+      - /data
+      - --console-address
+      - ":9001"
+
+    environment:
+      # Test-only credentials. They exist so a suite can sign a request against
+      # a container that lives for the length of the run, and they authorize
+      # nothing outside it.
+      MINIO_ROOT_USER: ${MINIO_TEST_ROOT_USER:-storagetestuser}
+      MINIO_ROOT_PASSWORD: ${MINIO_TEST_ROOT_PASSWORD:-storagetestpassword}
+      MINIO_BROWSER_REDIRECT: "off"
+
+    # Different ports from development, so a suite cannot accidentally run
+    # against the object store that holds a developer's real files.
+    ports:
+      - "127.0.0.1:${MINIO_TEST_PORT:-9100}:9000"
+
+    # No persistence at all: a test object store that survives a restart is a
+    # test object store that carries yesterday's objects into today's run.
+    tmpfs:
+      - /data
+
+    networks:
+      - storage_network
+
+    cpus: "${MINIO_TEST_CPUS:-0.75}"
+    mem_limit: ${MINIO_TEST_MEM_LIMIT:-512m}
+    mem_reservation: ${MINIO_TEST_MEM_RESERVATION:-128m}
+    pids_limit: ${MINIO_TEST_PIDS_LIMIT:-150}
+
+    stop_grace_period: 5s
+
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "${MINIO_TEST_LOG_MAX_SIZE:-5m}"
+        max-file: "${MINIO_TEST_LOG_MAX_FILE:-2}"
+
+volumes:
+  minio_data:
+    driver: local
+
+networks:
+  storage_network:
+    driver: bridge

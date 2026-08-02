@@ -252,6 +252,33 @@ the audit platform depends on nothing above it. An action belongs to whoever
 performs it, so `platform/audit` holds none. The detailed policy is defined in
 [`application-audit-platform.md`](./application-audit-platform.md).
 
+### Object storage
+
+```text
+src/platform/storage
+prisma/storage.prisma
+compose.storage.yaml
+```
+
+Responsibilities:
+
+- Own the S3-compatible provider port and its one adapter, so the SDK and the
+  provider are both replaceable without touching the upload lifecycle.
+- Own upload policies, the file declaration contract, and the key layout.
+- Authorize one direct upload at a time with a presigned POST that pins the key,
+  the media type, and the exact size.
+- Verify what actually arrived, promote it to an immutable final key, and hand
+  out short-lived private downloads.
+- Offer an inspection extension point, a bounded cleanup contract, and a health
+  contract.
+
+The direction is the point: a future module depends on the storage platform, and
+the storage platform depends on no module and on no other platform area. It
+never receives an actor — who may upload and who may download are decisions the
+calling module makes — and bytes never pass through Next.js. The detailed policy
+is defined in
+[`object-storage-and-uploads.md`](./object-storage-and-uploads.md).
+
 ### Authentication
 
 ```text

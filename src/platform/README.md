@@ -189,6 +189,33 @@ Implementation rules are documented in [`audit/README.md`](./audit/README.md) an
 the architectural policy in
 [`docs/architecture/application-audit-platform.md`](../../docs/architecture/application-audit-platform.md).
 
+## Object storage
+
+An optional, S3-compatible object storage platform lives under
+`src/platform/storage`, with the AWS SDK confined to `storage/provider`.
+
+- `config.ts` reads the configuration lazily. With `STORAGE_ENABLED=false` no
+  credential is read, no client is built, and no socket is opened.
+- `defineUploadPolicy` declares what an upload may be; the platform holds no
+  policy of its own, so one belongs to whoever owns the feature.
+- `createUploadIntent` authorizes exactly one upload and returns a presigned POST
+  that pins the key, the media type, and the exact size.
+- `finalizeUploadIntent` claims the intent atomically, verifies size, media type,
+  and SHA-256, optionally inspects the content, and promotes the staged bytes to
+  a final key with a conditional copy.
+- `createStorageDownloadUrl` signs a short-lived private link for a ready object.
+- `cleanupExpiredUploadIntents` and `checkStorageHealth` are contracts, wired to
+  no scheduler and no route.
+
+The direction is the point: a module depends on the storage platform, and the
+platform depends on no module and on no other platform area. It never receives
+an actor, and bytes never pass through Next.js — the browser uploads straight to
+the provider.
+
+Implementation rules are documented in
+[`storage/README.md`](./storage/README.md) and the architectural policy in
+[`docs/architecture/object-storage-and-uploads.md`](../../docs/architecture/object-storage-and-uploads.md).
+
 ## Observability
 
 Structured logging and request correlation are implemented under

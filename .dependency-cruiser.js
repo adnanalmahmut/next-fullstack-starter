@@ -161,6 +161,69 @@ module.exports = {
       },
     },
     {
+      name: "no-storage-driver-outside-provider",
+      comment:
+        "The AWS SDK belongs to src/platform/storage/provider. Everything above it is written against a provider-neutral port, which is what makes swapping the SDK or the provider a change to one directory. The two test paths build their own client on purpose: creating a bucket, listing a prefix, and deleting in bulk are capabilities production code must not have.",
+      severity: "error",
+      from: {
+        path: "^(?:src|tests)/",
+        pathNot:
+          "^src/platform/storage/provider/|^tests/fixtures/storage\\.fixture\\.ts$|^tests/storage/",
+      },
+      to: {
+        path: "(?:^|/)node_modules/(?:@aws-sdk/|aws-sdk/)",
+      },
+    },
+    {
+      name: "no-minio-sdk",
+      comment:
+        "MinIO speaks the S3 protocol, so a second client library would be a second code path for one wire format — and the one used only in development would be the one nobody tests against production.",
+      severity: "error",
+      from: {
+        path: "^(?:src|tests)/",
+      },
+      to: {
+        path: "(?:^|/)node_modules/minio/",
+      },
+    },
+    {
+      name: "no-storage-platform-internal-imports",
+      comment:
+        "Object storage is reached through @/platform/storage/index.server. The repository and the S3 client stay private, so no caller can mark an object ready without the verification that precedes it, or address a bucket the configuration did not choose.",
+      severity: "error",
+      from: {
+        path: "^src/",
+        pathNot: "^src/platform/storage/",
+      },
+      to: {
+        path: "^src/platform/storage/(?!index\\.server\\.ts$).+",
+      },
+    },
+    {
+      name: "no-storage-to-application-areas",
+      comment:
+        "The storage platform must not depend on authentication, auditing, caching, queues, the worker, routing, UI, translations, or business modules. It stores bytes; who may upload and who may download are decisions the calling module makes.",
+      severity: "error",
+      from: {
+        path: "^src/platform/storage/",
+      },
+      to: {
+        path: "^src/(?:platform/(?:auth|audit|redis|cache|concurrency|jobs)|worker|app|modules|ui|i18n)/",
+      },
+    },
+    {
+      name: "no-storage-in-request-path",
+      comment:
+        "Routing, UI, and translations must not depend on object storage. Bytes never pass through Next.js: a module asks for an upload intent through a normal JSON action, and the browser uploads straight to the provider.",
+      severity: "error",
+      from: {
+        path: "^src/(?:ui|i18n)/",
+      },
+      to: {
+        path: "^src/platform/storage/",
+      },
+    },
+    {
       name: "no-unresolvable-dependencies",
       comment: "All internal dependencies must resolve successfully.",
       severity: "error",

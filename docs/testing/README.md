@@ -88,14 +88,16 @@ The initial browser project is Chromium.
 
 ### Opt-in infrastructure suites
 
-Two suites need real infrastructure and are deliberately outside the default
+Three suites need real infrastructure and are deliberately outside the default
 Vitest configuration, each with its own config file and its own script. They
 cannot be reached by `pnpm test`, `pnpm test:unit`, or the coverage run, because
-`pnpm verify` has to pass on a machine that has neither Redis nor a worker.
+`pnpm verify` has to pass on a machine that has no Redis, no worker, and no
+object store.
 
 ```text
-tests/redis/**/*.redis.test.ts    → pnpm test:redis:integration
-tests/jobs/**/*.jobs.test.ts      → pnpm test:jobs:integration
+tests/redis/**/*.redis.test.ts      → pnpm test:redis:integration
+tests/jobs/**/*.jobs.test.ts        → pnpm test:jobs:integration
+tests/storage/**/*.storage.test.ts  → pnpm test:storage:integration
 ```
 
 **Run:**
@@ -107,11 +109,30 @@ REDIS_ENABLED=true REDIS_URL=redis://127.0.0.1:6380 pnpm test:redis:integration
 JOBS_ENABLED=true JOBS_REDIS_URL=redis://127.0.0.1:6380 pnpm test:jobs:integration
 ```
 
-The jobs suite needs PostgreSQL as well: the outbox is a table, and the
-guarantees under test are transactional. Both scope their keys to a run
-identifier — `REDIS_TEST_RUN_ID` and `JOBS_TEST_RUN_ID`, generated when absent —
-so two runs against one server cannot see each other's data, and both clean up
-only what they created.
+```bash
+pnpm storage:test:up
+
+STORAGE_ENABLED=true \
+STORAGE_ENDPOINT=http://127.0.0.1:9100 \
+STORAGE_REGION=us-east-1 \
+STORAGE_BUCKET=nfs-storage-test \
+STORAGE_ACCESS_KEY_ID=storagetestuser \
+STORAGE_SECRET_ACCESS_KEY=storagetestpassword \
+STORAGE_FORCE_PATH_STYLE=true \
+pnpm test:storage:integration
+```
+
+The jobs and storage suites need PostgreSQL as well: the outbox and the upload
+intent are both tables, and the guarantees under test are about the database and
+the external system agreeing. All three scope their data to a run identifier —
+`REDIS_TEST_RUN_ID`, `JOBS_TEST_RUN_ID`, and `STORAGE_TEST_RUN_ID`, generated
+when absent — so two runs against one server cannot see each other's data, and
+all three clean up only what they created.
+
+The storage suite creates its bucket idempotently rather than depending on one
+existing, never applies a bucket policy, never deletes the bucket, and asserts
+at the end that its own key prefix is empty and that an object belonging to
+another run is untouched.
 
 ## Common commands
 

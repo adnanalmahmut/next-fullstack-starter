@@ -70,6 +70,12 @@ jobs:
       # this block: `Verify project` and the end-to-end run must pass on a
       # machine that has no queue and no address for one.
       JOBS_ENABLED: "false"
+      # And the same for object storage. The endpoint, the bucket, and the
+      # credentials are deliberately absent from this block as well, so a
+      # regression that made the application require a bucket would fail
+      # `Verify project` rather than pass unnoticed on a runner that happens to
+      # have one.
+      STORAGE_ENABLED: "false"
 
     steps:
       - name: Checkout repository
@@ -137,6 +143,84 @@ jobs:
           # cannot consume each other's jobs.
           JOBS_TEST_RUN_ID: ci-${{ github.run_id }}-${{ github.run_attempt }}
         run: pnpm test:jobs:integration
+
+      # Object storage is optional for the application, and provisioned here on
+      # the same terms as Redis: the storage integration suite needs a real
+      # S3-compatible server, and every other step runs with storage disabled.
+      # MinIO speaks the S3 protocol, so it exercises the same adapter, the same
+      # presigned POST policy, and the same conditional copy that AWS S3 and
+      # Cloudflare R2 do.
+      #
+      # It is a step rather than a `services:` entry because MinIO needs a
+      # command — `server /data` — and a service container has no way to supply
+      # one. Started without it the image prints its usage and exits, so the
+      # service would never become healthy.
+      #
+      # The image is pinned to a release rather than tracking `latest`: an
+      # object store that silently changed version between two runs would make
+      # an integration failure impossible to attribute.
+      - name: Start MinIO
+        env:
+          # Test-only credentials for an ephemeral CI container. They authorize
+          # nothing outside this job, and no deployed environment uses them.
+          MINIO_ROOT_USER: storagetestuser
+          MINIO_ROOT_PASSWORD: storagetestpassword
+        run: |
+          docker run --detach --name minio \
+            --publish 127.0.0.1:9000:9000 \
+            --env "MINIO_ROOT_USER=$MINIO_ROOT_USER" \
+            --env "MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD" \
+            --health-cmd "mc ready local" \
+            --health-interval 3s \
+            --health-timeout 5s \
+            --health-retries 20 \
+            --health-start-period 5s \
+            minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+
+          # A real readiness gate, not a sleep: the job waits for the container's
+          # own health check to pass, and fails loudly if it never does.
+          for attempt in $(seq 1 40); do
+            status="$(docker inspect --format '{{.State.Health.Status}}' minio)"
+
+            if [ "$status" = "healthy" ]; then
+              echo "MinIO is ready."
+              exit 0
+            fi
+
+            if [ "$status" = "unhealthy" ]; then
+              docker logs minio
+              echo "MinIO reported unhealthy." >&2
+              exit 1
+            fi
+
+            sleep 3
+          done
+
+          docker logs minio
+          echo "MinIO did not become ready in time." >&2
+          exit 1
+
+      # The only step that sees an object store, and the only one with storage
+      # enabled. The suite creates its bucket, works under a key prefix unique
+      # to this run and attempt, and removes what it wrote — so two CI runs
+      # against one server cannot see or delete each other's objects.
+      - name: Run storage integration tests
+        env:
+          STORAGE_ENABLED: "true"
+          STORAGE_ENDPOINT: http://127.0.0.1:9000
+          STORAGE_REGION: us-east-1
+          STORAGE_BUCKET: next-fullstack-starter-ci
+          # CI-local values matching the ephemeral MinIO service above.
+          STORAGE_ACCESS_KEY_ID: storagetestuser
+          STORAGE_SECRET_ACCESS_KEY: storagetestpassword
+          # MinIO addresses a bucket in the path rather than the hostname.
+          STORAGE_FORCE_PATH_STYLE: "true"
+          STORAGE_TEST_RUN_ID: ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: pnpm test:storage:integration
+
+      - name: Stop MinIO
+        if: ${{ always() }}
+        run: docker rm --force minio || true
 
       - name: Upload Playwright failure artifacts
         if: ${{ failure() }}
