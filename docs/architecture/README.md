@@ -17,6 +17,7 @@ System-level architectural documentation lives here.
 - [Cache and Concurrency Controls](./cache-and-concurrency-controls.md)
 - [Background Jobs and Transactional Outbox](./background-jobs-and-outbox.md)
 - [Application Audit Platform](./application-audit-platform.md)
+- [Object Storage and Uploads](./object-storage-and-uploads.md)
 - [Design System](../design-system/README.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)
@@ -66,6 +67,12 @@ Current documentation covers:
   generic actor and result contract, a closed metadata policy, a transactional
   and a post-commit writer, append-only storage, bounded keyset paging, and one
   admin reader that renders any module's actions.
+- An optional object storage platform: an S3-compatible adapter for AWS S3,
+  Cloudflare R2, and MinIO, durable upload intents, presigned direct uploads
+  that never route bytes through Next.js, checksum and metadata verification,
+  an immutable staging-to-final promotion, private short-lived downloads, a
+  content-inspection extension point, a bounded unscheduled cleanup contract,
+  and a removal procedure that touches no business code.
 - Semantic design tokens, reusable presentation primitives, and RTL/LTR UI.
 
 Future documentation may cover:

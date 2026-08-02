@@ -420,15 +420,32 @@ export const REDIS_DRIVER_DIRECTORY = "src/platform/redis/";
  */
 export const JOBS_DRIVER_DIRECTORY = "src/platform/jobs/";
 
+/**
+ * The one directory allowed to import an object storage driver.
+ *
+ * Narrower than the other two on purpose: it is a subdirectory of the storage
+ * platform, not the platform itself. Everything above `provider/` is written
+ * against a provider-neutral port and never sees an AWS type, which is what
+ * makes swapping the SDK — or the provider — a change to one directory rather
+ * than a change to the upload lifecycle.
+ *
+ * The MinIO SDK is deliberately absent from the allowed set. MinIO speaks the
+ * S3 protocol, so a second client library would be a second code path for one
+ * wire format, and the one used only in development would be the one nobody
+ * tests against production.
+ */
+export const STORAGE_DRIVER_DIRECTORY = "src/platform/storage/provider/";
+
 const cacheDriverPattern = /^(?:redis(?:\/|$)|@redis\/)/;
 const queueDriverPattern = /^(?:ioredis|bullmq)(?:\/|$)/;
+const storageDriverPattern = /^(?:@aws-sdk\/|aws-sdk(?:\/|$))/;
 
 const noRedisDriverImportRule = {
   meta: {
     type: "problem",
     docs: {
       description:
-        "Restrict Redis and queue driver imports to the directories that own them.",
+        "Restrict Redis, queue, and object storage driver imports to the directories that own them.",
     },
     schema: [],
     messages: {
@@ -450,6 +467,11 @@ const noRedisDriverImportRule = {
         pattern: queueDriverPattern,
         directory: JOBS_DRIVER_DIRECTORY,
         entryPoint: "@/platform/jobs/index.server",
+      },
+      {
+        pattern: storageDriverPattern,
+        directory: STORAGE_DRIVER_DIRECTORY,
+        entryPoint: "@/platform/storage/index.server",
       },
     ].filter((driver) => !filename.includes(driver.directory));
 

@@ -247,6 +247,77 @@ cursor, behind `audit.record.read`. Adding an audited action needs no migration.
 See
 [`docs/architecture/application-audit-platform.md`](docs/architecture/application-audit-platform.md).
 
+## Optional Object Storage
+
+Object storage is optional and disabled by default. The application builds,
+runs, and passes `pnpm verify` and `pnpm test:e2e` with no bucket, no endpoint,
+and no credentials. It is S3-compatible, so the same adapter serves AWS S3,
+Cloudflare R2, and MinIO — configured, not re-implemented.
+
+Bytes never pass through Next.js. A module authorizes an upload, the browser
+posts the file straight to the object store, and the module finalizes:
+
+```ts
+const intent = await createUploadIntent({ policy: invoiceUpload, file });
+// The browser POSTs to `intent.upload`, then:
+const { object } = await finalizeUploadIntent({
+  intentId,
+  finalizeToken,
+  policy: invoiceUpload,
+});
+```
+
+Finalization verifies the size, the media type, and the SHA-256 of what actually
+arrived, then promotes the staged bytes to a final key the client was never told
+and can never write. Reusing the upload form afterwards cannot change what a
+module reads.
+
+MinIO runs as its own Compose project, so these commands never affect PostgreSQL
+or Redis, and `db:*` and `redis:*` never affect MinIO.
+
+```bash
+cp compose.storage.env.example compose.storage.env
+pnpm storage:up
+```
+
+| Command                         | Purpose                                |
+| ------------------------------- | -------------------------------------- |
+| `pnpm storage:up`               | Start the development MinIO service.   |
+| `pnpm storage:down`             | Stop and remove the MinIO services.    |
+| `pnpm storage:status`           | Display MinIO service status.          |
+| `pnpm storage:logs`             | Follow development MinIO logs.         |
+| `pnpm storage:test:up`          | Start the isolated test MinIO service. |
+| `pnpm storage:test:down`        | Remove the test MinIO container.       |
+| `pnpm storage:test:logs`        | Follow test MinIO logs.                |
+| `pnpm test:storage:integration` | Run the opt-in storage suite.          |
+
+Enable it by setting `STORAGE_ENABLED=true` with a region and a bucket. The
+bucket must be private: the application never issues a public URL and never sets
+an ACL. The storage integration suite is opt-in and is not part of
+`pnpm verify`:
+
+```bash
+pnpm storage:test:up
+
+STORAGE_ENABLED=true \
+STORAGE_ENDPOINT=http://127.0.0.1:9100 \
+STORAGE_REGION=us-east-1 \
+STORAGE_BUCKET=nfs-storage-test \
+STORAGE_ACCESS_KEY_ID=storagetestuser \
+STORAGE_SECRET_ACCESS_KEY=storagetestpassword \
+STORAGE_FORCE_PATH_STYLE=true \
+pnpm test:storage:integration
+```
+
+A declared media type and a matching checksum prove the bytes are the ones the
+client promised; they prove nothing about whether the content is safe. Judging
+that needs a `StorageContentInspector`, and this repository implements none. The
+platform ships no upload policy, no module, no page, and no route.
+
+See
+[`docs/architecture/object-storage-and-uploads.md`](docs/architecture/object-storage-and-uploads.md),
+including how to remove object storage from a generated project.
+
 ## Verification
 
 Ensure the test database is running:

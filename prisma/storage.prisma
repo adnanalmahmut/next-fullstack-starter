@@ -1,0 +1,182 @@
+/// Where a stored object is in its life.
+///
+/// The set is closed, and the two terminal-but-different failures are kept
+/// apart on purpose. `REJECTED` means the bytes that arrived were not the bytes
+/// that were declared — a size, a checksum, or a content type that did not
+/// match — and nothing about the file is trusted. `EXPIRED` means nobody ever
+/// finished the upload. Collapsing them would lose the distinction between a
+/// client that failed and a client that lied.
+enum StorageObjectStatus {
+  PENDING     @map("pending")
+  READY       @map("ready")
+  QUARANTINED @map("quarantined")
+  REJECTED    @map("rejected")
+  EXPIRED     @map("expired")
+
+  @@map("storage_object_status")
+}
+
+/// What a content inspector concluded, if anything.
+///
+/// `NOT_CONFIGURED` is a first-class outcome rather than a null, and the
+/// difference is the point: a file that no inspector ever looked at must not be
+/// indistinguishable from a file that was looked at and found clean. A policy
+/// that declares inspection `required` refuses to finalize at all without one.
+enum StorageInspectionResult {
+  NOT_CONFIGURED @map("not-configured")
+  CLEAN          @map("clean")
+  QUARANTINED    @map("quarantined")
+
+  @@map("storage_inspection_result")
+}
+
+/// Where an upload intent is in its life.
+enum StorageUploadIntentStatus {
+  PENDING     @map("pending")
+  FINALIZING  @map("finalizing")
+  FINALIZED   @map("finalized")
+  QUARANTINED @map("quarantined")
+  REJECTED    @map("rejected")
+  EXPIRED     @map("expired")
+
+  @@map("storage_upload_intent_status")
+}
+
+/// One object in the bucket, as PostgreSQL understands it.
+///
+/// Owned by `src/platform/storage`. It is generic: nothing here names a
+/// document, an owner, a business resource, or a permission. A future module
+/// stores the `id` of a row in this table and nothing else — not the key, not
+/// the bucket, not the provider — which is what lets the provider change, the
+/// key layout change, or the whole platform be deleted without a migration to
+/// the module that used it.
+///
+/// It has no foreign key to `user`, to `session`, or to any business model, and
+/// that is deliberate rather than an omission. Who may upload and who may
+/// download are decisions the calling module makes; a column here would be the
+/// platform quietly taking one of them.
+///
+/// `objectKey` is the *final* key, and it is generated server-side from strong
+/// randomness. It never contains an original filename, a user identifier, an
+/// email address, or a business identifier, because an object key ends up in
+/// provider access logs, in bucket listings, and in support tickets. It is not
+/// returned to a client either: a download is a short-lived signed URL, so the
+/// client never needs to know where the bytes live.
+///
+/// A row becomes `READY` only after the bytes in staging were verified and then
+/// promoted to `objectKey` by a server-side copy. The client can never write to
+/// `objectKey`: no presigned upload is ever issued for it. That is the whole
+/// immutability guarantee — reusing a staging upload after finalization cannot
+/// change what a module later reads.
+model StorageObject {
+  id     String              @id @default(uuid(7))
+  status StorageObjectStatus @default(PENDING)
+
+  /// The final key, or the quarantine key once an inspector has withheld the
+  /// object. Server-generated, unique, and never exposed to a client.
+  objectKey String @unique @db.VarChar(512)
+
+  /// Verified at finalization, not declared. Null until then.
+  contentType    String? @db.VarChar(128)
+  sizeBytes      BigInt?
+  checksumSha256 String? @db.VarChar(64)
+
+  /// The provider's entity tag for the finalized object.
+  ///
+  /// Kept for the conditional copy and for support, and explicitly *not* used
+  /// as a checksum: for a multipart or server-side-encrypted object an ETag is
+  /// not the MD5 of the content, and it is never SHA-256 under any condition.
+  etag String? @db.VarChar(128)
+
+  inspectionResult StorageInspectionResult?
+  /// A stable code from the inspector's own closed set. Never a message.
+  inspectionReason String?                  @db.VarChar(64)
+
+  readyAt       DateTime?
+  quarantinedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  intent StorageUploadIntent?
+
+  /// Cleanup and administration both ask "what is in this state, oldest first".
+  @@index([status, createdAt])
+  @@map("storage_object")
+}
+
+/// One authorization to upload one object, once.
+///
+/// The intent is what makes a direct browser upload safe. The client is handed
+/// a presigned form that can write exactly one key, of exactly one content type,
+/// within exactly one size range, for a few minutes — and nothing else. The
+/// bytes never pass through the application.
+///
+/// PostgreSQL is the coordination point, not Redis and not a distributed lock.
+/// A finalization claims the row atomically on `(status, version)` and holds a
+/// bounded lease while it talks to the provider, so two concurrent attempts
+/// produce one final object and one winner. A lease that expires can be
+/// reclaimed; the attempt that lost its lease cannot then complete, because the
+/// version it holds is stale.
+///
+/// `finalizeTokenHash` is a hash and never the token. The token is returned once,
+/// at creation, and the calling module sends it back inside an authorized JSON
+/// request. Comparison is constant-time, and a wrong token is answered exactly
+/// like an unknown intent so that neither can be used to probe for the other.
+///
+/// The declared values are what the client *said*. They are stored so
+/// finalization can check them against what the provider actually received; a
+/// mismatch rejects the upload. `stagingKey` is separate from the object's final
+/// key by construction, and is the only key a client is ever able to write.
+model StorageUploadIntent {
+  id String @id @default(uuid(7))
+
+  /// The object this intent will produce. One intent per object: an intent is
+  /// created with its object, in one transaction, and is never reused.
+  objectId String        @unique
+  object   StorageObject @relation(fields: [objectId], references: [id], onDelete: Cascade)
+
+  status StorageUploadIntentStatus @default(PENDING)
+
+  /// The only key the presigned upload can write. Never the final key.
+  stagingKey String @unique @db.VarChar(512)
+
+  /// SHA-256 of the finalize token. The token itself is never stored.
+  finalizeTokenHash String @db.VarChar(64)
+
+  /// The name of the server-owned upload policy this intent was created under.
+  /// Stored so finalization can refuse a policy other than the one that issued
+  /// it; the policy object itself lives in code, not here.
+  policyName String @db.VarChar(64)
+
+  declaredExtension      String @db.VarChar(16)
+  expectedContentType    String @db.VarChar(128)
+  expectedSizeBytes      BigInt
+  expectedChecksumSha256 String @db.VarChar(64)
+
+  expiresAt DateTime
+
+  /// The current finalization lease, held while a provider call is in flight.
+  /// Both halves are present together or absent together.
+  finalizeLeaseTokenHash String?   @db.VarChar(64)
+  finalizeLeaseExpiresAt DateTime?
+
+  finalizedAt DateTime?
+
+  /// Why this intent ended in a terminal failure. A stable code, never a
+  /// provider message.
+  failureReason String? @db.VarChar(64)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The optimistic-concurrency counter. Every claim and every completion
+  /// carries the version it expected, so a stale owner writes nothing.
+  version Int @default(1)
+
+  /// Expiring the intents nobody finished, oldest first.
+  @@index([status, expiresAt])
+  /// Reclaiming a lease abandoned by an attempt that died mid-finalization.
+  @@index([status, finalizeLeaseExpiresAt])
+  @@map("storage_upload_intent")
+}

@@ -49,6 +49,16 @@ const restrictedImportPatterns = {
     message:
       "This layer must not depend on the audit platform. What is worth recording is a decision the call site makes, not something an adapter or an infrastructure client can know.",
   },
+  storage: {
+    regex: "^@/platform/storage(?:/|$)",
+    message:
+      "This layer must not depend on object storage. A module asks for an upload intent through a normal action; bytes never pass through an adapter, a cache, or a queue.",
+  },
+  awsSdk: {
+    regex: "^(?:@aws-sdk/|aws-sdk(?:/|$))",
+    message:
+      "The AWS SDK belongs to src/platform/storage/provider. Above it the platform speaks a provider-neutral port, so the SDK and the provider can both be replaced without touching the upload lifecycle.",
+  },
   cache: {
     regex: "^@/platform/cache(?:/|$)",
     message:
@@ -123,12 +133,18 @@ const eslintConfig = defineConfig([
   {
     name: "architecture/infrastructure-drivers",
     files: ["src/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}", "tools/**/*.mjs"],
+    // The storage test harness is the one exemption, and it is a deliberate
+    // one. Creating a bucket, listing a prefix, and deleting in bulk are
+    // capabilities the platform must not have — so the suite that needs them
+    // builds its own client rather than the platform growing the operations.
+    ignores: ["tests/fixtures/storage.fixture.ts", "tests/storage/**/*.ts"],
     // Its own rule rather than a `no-restricted-imports` entry: that option is
     // replaced wholesale by the later, more specific layer blocks, and this
-    // boundary has to hold for every file in the repository. It covers both
-    // driver families — `redis` for the Redis platform, `ioredis` and `bullmq`
-    // for the jobs platform — and refuses each outside the directory that owns
-    // it, including inside the other one.
+    // boundary has to hold for every file in the repository. It covers all
+    // three driver families — `redis` for the Redis platform, `ioredis` and
+    // `bullmq` for the jobs platform, `@aws-sdk/*` for the storage provider —
+    // and refuses each outside the directory that owns it, including inside
+    // another one.
     plugins: {
       architecture: architecturePlugin,
     },
@@ -395,6 +411,106 @@ const eslintConfig = defineConfig([
           regex: "^@/(?:app|modules)(?:/|$)",
           message:
             "The audit presentation must not depend on application routing or business modules.",
+        },
+      ),
+    },
+  },
+  {
+    name: "architecture/storage-platform",
+    files: ["src/platform/storage/**/*.{ts,tsx}"],
+    ignores: ["src/platform/storage/provider/**/*.{ts,tsx}"],
+    // The storage platform owns the upload lifecycle and the two tables behind
+    // it, so Prisma is deliberately not restricted: an intent and its object
+    // are created in one transaction, and every claim is a conditional update.
+    //
+    // Everything else is restricted, and the direction is the reason. A future
+    // module depends on storage; storage depends on no module, and on no other
+    // platform area. It must not authenticate — who may upload is the calling
+    // module's decision, not a question a byte store can answer. It must not
+    // audit, because what is worth recording about a file is a business
+    // judgement. It must not cache, queue, or lock: an object either exists in
+    // the bucket or does not, and PostgreSQL is the only thing coordinating a
+    // finalization. And it must not render or read a request, because the
+    // browser talks to the provider directly and no byte passes through
+    // Next.js.
+    //
+    // The AWS SDK is refused here too. It belongs one directory down, in
+    // `provider/`, behind a port that names no AWS type.
+    rules: {
+      "no-restricted-imports": restrictImports(
+        restrictedImportPatterns.react,
+        restrictedImportPatterns.next,
+        restrictedImportPatterns.translations,
+        restrictedImportPatterns.betterAuth,
+        restrictedImportPatterns.audit,
+        restrictedImportPatterns.redis,
+        restrictedImportPatterns.queue,
+        restrictedImportPatterns.jobs,
+        restrictedImportPatterns.cache,
+        restrictedImportPatterns.concurrency,
+        restrictedImportPatterns.worker,
+        restrictedImportPatterns.postgres,
+        restrictedImportPatterns.awsSdk,
+        {
+          regex: "^@/platform/auth(?:/|$)",
+          message:
+            "The storage platform must not depend on authentication. Who may upload and who may download are decisions the calling module makes; the platform never receives an actor.",
+        },
+        {
+          regex: "^@/platform/(?:actions|http|proxy)(?:/|$)",
+          message:
+            "The storage platform must not depend on an application adapter. Bytes never pass through a route handler or a server action.",
+        },
+        {
+          regex: "^@/(?:app|modules|ui)(?:/|$)",
+          message:
+            "The storage platform must not depend on application routing, business modules, or UI code.",
+        },
+        {
+          regex: "^(?:\\.\\.?/)+(?:[^/]+/)*(?:app|modules|ui)(?:/|$)",
+          message:
+            "The storage platform must not reach application routing, business modules, or UI code through relative imports.",
+        },
+      ),
+    },
+  },
+  {
+    name: "architecture/storage-provider",
+    files: ["src/platform/storage/provider/**/*.{ts,tsx}"],
+    // The one directory allowed to hold the AWS SDK, so it is the one block
+    // that does not refuse it. Everything else it must not reach is refused for
+    // the same reasons as above, and persistence is added to the list: the
+    // adapter talks to a bucket and to nothing else, which is what makes "no
+    // provider request inside a database transaction" structurally true.
+    rules: {
+      "no-restricted-imports": restrictImports(
+        restrictedImportPatterns.react,
+        restrictedImportPatterns.next,
+        restrictedImportPatterns.translations,
+        restrictedImportPatterns.betterAuth,
+        restrictedImportPatterns.audit,
+        restrictedImportPatterns.redis,
+        restrictedImportPatterns.queue,
+        restrictedImportPatterns.jobs,
+        restrictedImportPatterns.cache,
+        restrictedImportPatterns.concurrency,
+        restrictedImportPatterns.worker,
+        restrictedImportPatterns.prisma,
+        restrictedImportPatterns.database,
+        restrictedImportPatterns.postgres,
+        {
+          regex: "^@/platform/auth(?:/|$)",
+          message: "The storage adapter must not depend on authentication.",
+        },
+        {
+          regex: "^@/platform/(?:actions|http|proxy)(?:/|$)",
+          message:
+            "The storage adapter must not depend on an application adapter.",
+        },
+        {
+          regex: "^@/(?:app|modules|ui)(?:/|$)",
+          message:
+            "The storage adapter must not depend on application routing, business modules, or UI code.",
         },
       ),
     },
