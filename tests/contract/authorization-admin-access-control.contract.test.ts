@@ -18,7 +18,7 @@ import {
   ADMIN_ENDPOINT_RULES,
   SELF_SCOPED_ADMIN_ENDPOINTS,
 } from "@/platform/auth/authorization/admin-endpoints";
-import { AUDIT_ACTIONS } from "@/platform/auth/authorization/audit/audit-action";
+import { IDENTITY_AUDIT_ACTIONS } from "@/platform/auth/authorization/audit/identity-audit-actions";
 import {
   APPLICATION_STATEMENTS,
   PERMISSIONS,
@@ -157,8 +157,8 @@ describe("access control", () => {
 
   it("combines the plugin statements with the application statements", () => {
     expect(Object.keys(accessControl.statements).sort()).toEqual([
+      "audit.record",
       "identity.admin",
-      "identity.audit",
       "identity.session",
       "identity.user",
       "session",
@@ -182,7 +182,7 @@ describe("access control", () => {
       "identity.admin": [],
       "identity.user": [],
       "identity.session": [],
-      "identity.audit": [],
+      "audit.record": [],
     });
   });
 
@@ -193,7 +193,7 @@ describe("access control", () => {
       "identity.admin": ["access"],
       "identity.user": ["list", "read", "set-role"],
       "identity.session": ["revoke"],
-      "identity.audit": ["read"],
+      "audit.record": ["read"],
     });
   });
 
@@ -276,8 +276,7 @@ describe("authorization boundaries", () => {
       `${authorizationRoot}/admin-endpoints.ts`,
       `${authorizationRoot}/policies/set-role.policy.ts`,
       `${authorizationRoot}/policies/revoke-sessions.policy.ts`,
-      `${authorizationRoot}/audit/audit-action.ts`,
-      `${authorizationRoot}/audit/audit-record.ts`,
+      `${authorizationRoot}/audit/identity-audit-actor.ts`,
     ];
 
     for (const path of pure) {
@@ -306,9 +305,11 @@ describe("authorization boundaries", () => {
     }
   });
 
-  it("reaches the database only from the two repositories", () => {
+  it("reaches the database only from its one repository", () => {
+    // The audit repository used to be the second. The trail is the audit
+    // platform's now, and this area reaches it through a writer that takes a
+    // definition rather than through a Prisma delegate.
     const allowed = new Set([
-      `${authorizationRoot}/audit/audit-repository.server.ts`,
       `${authorizationRoot}/identity-read.repository.server.ts`,
     ]);
 
@@ -472,7 +473,13 @@ describe("administration API", () => {
       const code = stripComments(read(path));
 
       expect(code.includes("input:"), path).toBe(true);
-      expect(/adminInputSchemas\.\w+/.test(code), path).toBe(true);
+      // The schemas come from whichever platform owns the read. The admin reads
+      // belong to identity administration; the audit list belongs to the audit
+      // platform, which owns its own bounds and its own cursor.
+      expect(
+        /(?:adminInputSchemas|auditInputSchemas)\.\w+/.test(code),
+        path,
+      ).toBe(true);
       // The schema is declared; the factory is what parses it.
       expect(/\.(?:safe)?[pP]arse(?:Async)?\(/.test(code), path).toBe(false);
     }
@@ -580,9 +587,16 @@ describe("proxy classification", () => {
   });
 });
 
-describe("audit trail", () => {
+describe("identity audit actions", () => {
+  // What an identity change records is authorization's business. How a record is
+  // stored, bounded, and read back is the audit platform's, and is asserted in
+  // `application-audit-platform.contract.test.ts`.
+  const identityActionNames = IDENTITY_AUDIT_ACTIONS.map(
+    (definition) => definition.name,
+  );
+
   it("declares exactly the two audited mutations", () => {
-    expect(AUDIT_ACTIONS).toEqual([
+    expect(identityActionNames).toEqual([
       "identity.user.role-set",
       "identity.session.revoked",
     ]);
@@ -593,7 +607,7 @@ describe("audit trail", () => {
       ADMIN_ENDPOINT_RULES.filter((rule) => rule.audit !== null).map(
         (rule) => rule.audit,
       ),
-    ).toEqual(AUDIT_ACTIONS);
+    ).toEqual(identityActionNames);
   });
 
   it("audits no read", () => {
@@ -606,35 +620,63 @@ describe("audit trail", () => {
     expect(SELF_SCOPED_ADMIN_ENDPOINTS).not.toContain("/admin/set-role");
   });
 
-  it("exposes no update or delete operation", () => {
-    const repository = read(
-      `${authorizationRoot}/audit/audit-repository.server.ts`,
-    );
-    const code = stripComments(repository);
-
-    expect(code).toContain("authorizationAuditRecord.create");
-    expect(code).toContain("authorizationAuditRecord.findMany");
-    expect(code).not.toContain("update");
-    expect(code).not.toContain("delete");
-    expect(code).not.toContain("upsert");
-    expect(code).toContain("take: limit");
-  });
-
-  it("never selects the acting session identifier for a reader", () => {
+  it("records the change through the audit platform, not a Prisma delegate", () => {
     const code = stripComments(
-      read(`${authorizationRoot}/audit/audit-repository.server.ts`),
+      read(`${authorizationRoot}/audit/record-identity-audit.server.ts`),
     );
-    const readAt = code.indexOf("findMany");
 
-    expect(code.slice(readAt)).not.toContain("actorSessionId");
+    expect(code).toContain("recordAuditPostCommit");
+    expect(code).not.toContain("authorizationAuditRecord");
+    expect(code).not.toContain("auditRecord");
+    expect(code).not.toContain("@/platform/database");
   });
 
-  it("stores no sensitive field", () => {
+  it("does not fail a completed operation when the record cannot be stored", () => {
+    // Better Auth has already committed by the time the hook runs, so a lost
+    // record must not become a retryable failure. The writer answers `false`
+    // and the recorder simply does not claim the operation completed.
+    const code = stripComments(
+      read(`${authorizationRoot}/audit/record-identity-audit.server.ts`),
+    );
+
+    expect(code).not.toContain("throw");
+  });
+
+  it("hands the audit platform an actor with no identity attributes", () => {
+    const code = stripComments(
+      read(`${authorizationRoot}/audit/identity-audit-actor.ts`),
+    );
+
+    for (const field of ["email", "name", "roles", "token", "cookie"]) {
+      expect(code.includes(`actor.${field}`), field).toBe(false);
+    }
+  });
+
+  it("writes to the legacy trail from nowhere in the application", () => {
+    const production = [
+      ...sourceFiles("src/platform"),
+      ...sourceFiles("src/app"),
+      ...sourceFiles("src/modules"),
+    ];
+
+    for (const { path, code } of production) {
+      expect(code.includes("authorizationAuditRecord"), path).toBe(false);
+    }
+  });
+
+  it("keeps the legacy model as frozen storage", () => {
     const model = read("prisma/authorization.prisma");
     const code = model
       .split("\n")
       .filter((line) => !line.trimStart().startsWith("///"))
       .join("\n");
+
+    // Structure unchanged: still no relation, still the same model, and still
+    // free of anything sensitive.
+    expect(model).not.toContain("@relation");
+    expect(model).not.toContain("onDelete");
+    expect(code).toContain("model AuthorizationAuditRecord");
+    expect(code).toContain("enum AuthorizationAuditAction");
 
     for (const field of [
       "password",
@@ -652,24 +694,6 @@ describe("audit trail", () => {
         false,
       );
     }
-  });
-
-  it("keeps the record independent of the identity tables", () => {
-    const model = read("prisma/authorization.prisma");
-
-    expect(model).not.toContain("@relation");
-    expect(model).not.toContain("onDelete");
-    expect(model).toContain("model AuthorizationAuditRecord");
-  });
-
-  it("does not fail a completed operation when the record cannot be stored", () => {
-    const code = stripComments(
-      read(`${authorizationRoot}/audit/record-audit.server.ts`),
-    );
-
-    expect(code).toContain("catch");
-    expect(code).toContain("AUDIT_WRITE_FAILED");
-    expect(code).not.toContain("throw");
   });
 });
 

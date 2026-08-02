@@ -229,6 +229,29 @@ own key namespace, so it shares no driver and no key space with the Redis
 foundation above. The detailed policy is defined in
 [`background-jobs-and-outbox.md`](./background-jobs-and-outbox.md).
 
+### Application audit
+
+```text
+src/platform/audit
+src/app/_composition/audit-catalog.ts
+prisma/audit.prisma
+```
+
+Responsibilities:
+
+- Own the generic audit contracts: the action definition, the actor, the result,
+  the metadata policy, the cursor, and the reader DTO.
+- Append a record inside the caller's transaction, or after a change some other
+  system already committed.
+- Store the trail append-only, with no foreign key to anything it refers to.
+- Read it back, newest first, bounded and paged by cursor.
+- Render it, knowing no vocabulary of its own.
+
+The direction is the point: authentication depends on the audit platform, and
+the audit platform depends on nothing above it. An action belongs to whoever
+performs it, so `platform/audit` holds none. The detailed policy is defined in
+[`application-audit-platform.md`](./application-audit-platform.md).
+
 ### Authentication
 
 ```text
@@ -266,7 +289,9 @@ Responsibilities:
 - Hold the resource policies for the supported administrative operations.
 - Apply the capability, the policies, and the audit record to the Better Auth
   Admin endpoints, including a direct call.
-- Own the append-only authorization audit trail and its migration.
+- Declare the identity audit actions, and record them through the audit
+  platform. The trail itself is owned by `src/platform/audit`;
+  `prisma/authorization.prisma` is frozen legacy storage.
 - Serve the protected, localized administration area and its versioned API.
 
 No access decision is made by comparing a role name, and the proxy plays no part

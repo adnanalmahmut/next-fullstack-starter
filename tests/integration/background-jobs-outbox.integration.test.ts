@@ -47,22 +47,22 @@ const job = defineJob({
 /**
  * A stand-in for the business change a real caller would be making.
  *
- * The audit table is used because it already exists, is append-only, and has no
- * foreign key to anything this suite would have to create. Inventing a table for
- * the fixture would put a business model in the production schema, which is the
- * one thing this change is not allowed to do.
+ * `Verification` is used because it already exists, is small, and has no foreign
+ * key to anything this suite would have to create. Inventing a table for the
+ * fixture would put a business model in the production schema, which is the one
+ * thing this change is not allowed to do — and the audit trail, which used to
+ * stand in here, is append-only storage rather than a scratch table.
  */
 async function writeBusinessChange(
   tx: Parameters<Parameters<typeof database.$transaction>[0]>[0],
   marker: string,
 ): Promise<string> {
-  const record = await tx.authorizationAuditRecord.create({
+  const record = await tx.verification.create({
     data: {
-      actorUserId: `${RUN_ID}-actor`,
-      actorSessionId: `${RUN_ID}-session`,
-      action: "USER_ROLE_SET",
-      targetUserId: marker,
-      requestId: RUN_ID,
+      id: `${marker}-${randomUUID()}`,
+      identifier: marker,
+      value: RUN_ID,
+      expiresAt: new Date(Date.now() + 3_600_000),
     },
     select: { id: true },
   });
@@ -84,9 +84,7 @@ afterEach(async () => {
   resetJobsConfiguration();
 
   await database.outboxMessage.deleteMany({ where: { correlationId: RUN_ID } });
-  await database.authorizationAuditRecord.deleteMany({
-    where: { requestId: RUN_ID },
-  });
+  await database.verification.deleteMany({ where: { value: RUN_ID } });
 });
 
 afterAll(async () => {
@@ -112,9 +110,7 @@ describe("the change and the intent to publish it share a commit", () => {
 
     const [row, changes] = await Promise.all([
       database.outboxMessage.findUnique({ where: { id: outboxId } }),
-      database.authorizationAuditRecord.count({
-        where: { targetUserId: marker },
-      }),
+      database.verification.count({ where: { identifier: marker } }),
     ]);
 
     expect(changes).toBe(1);
@@ -156,9 +152,7 @@ describe("the change and the intent to publish it share a commit", () => {
       await database.outboxMessage.findUnique({ where: { id: outboxId } }),
     ).toBeNull();
     expect(
-      await database.authorizationAuditRecord.count({
-        where: { targetUserId: marker },
-      }),
+      await database.verification.count({ where: { identifier: marker } }),
     ).toBe(0);
   });
 
@@ -225,9 +219,7 @@ describe("a job's effect happens once", () => {
       }),
     ).not.toBeNull();
     expect(
-      await database.authorizationAuditRecord.count({
-        where: { targetUserId: target },
-      }),
+      await database.verification.count({ where: { identifier: target } }),
     ).toBe(1);
   });
 
@@ -254,9 +246,7 @@ describe("a job's effect happens once", () => {
 
     expect(second.executed).toBe(false);
     expect(
-      await database.authorizationAuditRecord.count({
-        where: { targetUserId: target },
-      }),
+      await database.verification.count({ where: { identifier: target } }),
     ).toBe(1);
   });
 
@@ -285,9 +275,7 @@ describe("a job's effect happens once", () => {
       }),
     ).toBeNull();
     expect(
-      await database.authorizationAuditRecord.count({
-        where: { targetUserId: target },
-      }),
+      await database.verification.count({ where: { identifier: target } }),
     ).toBe(0);
 
     // And the retry is free to run.
@@ -318,9 +306,7 @@ describe("a job's effect happens once", () => {
 
     expect(outcomes.filter(({ executed }) => executed)).toHaveLength(1);
     expect(
-      await database.authorizationAuditRecord.count({
-        where: { targetUserId: target },
-      }),
+      await database.verification.count({ where: { identifier: target } }),
     ).toBe(1);
   });
 
@@ -344,9 +330,7 @@ describe("a job's effect happens once", () => {
     // A v2 that fixes a calculation must be free to run over a row v1 touched.
     expect(second.executed).toBe(true);
     expect(
-      await database.authorizationAuditRecord.count({
-        where: { targetUserId: target },
-      }),
+      await database.verification.count({ where: { identifier: target } }),
     ).toBe(2);
   });
 });

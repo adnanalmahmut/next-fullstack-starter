@@ -141,7 +141,7 @@ describe("PostgreSQL remains the source of truth", () => {
 
   it("keeps the controls out of the repositories that own the data", () => {
     const repositories = [
-      "src/platform/auth/authorization/audit/audit-repository.server.ts",
+      "src/platform/audit/audit-repository.server.ts",
       "src/platform/auth/authorization/identity-read.repository.server.ts",
     ];
 

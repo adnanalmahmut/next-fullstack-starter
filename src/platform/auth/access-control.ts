@@ -36,7 +36,7 @@ export const userRole = accessControl.newRole({
   "identity.admin": [],
   "identity.user": [],
   "identity.session": [],
-  "identity.audit": [],
+  "audit.record": [],
 });
 
 /**
@@ -53,7 +53,7 @@ export const adminRole = accessControl.newRole({
   "identity.admin": ["access"],
   "identity.user": ["list", "read", "set-role"],
   "identity.session": ["revoke"],
-  "identity.audit": ["read"],
+  "audit.record": ["read"],
 });
 
 export const authorizationRoles = {

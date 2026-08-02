@@ -3,15 +3,12 @@ import { describe, expect, it } from "vitest";
 import { ValidationError } from "@/shared/errors/application-error";
 
 import {
-  ADMIN_AUDIT_DEFAULT_LIMIT,
-  ADMIN_AUDIT_MAX_LIMIT,
   ADMIN_USERS_DEFAULT_LIMIT,
   ADMIN_USERS_MAX_LIMIT,
   ADMIN_USERS_MAX_OFFSET,
   ADMIN_USERS_SEARCH_FIELD,
   ADMIN_USERS_SORT_FIELDS,
   adminInputSchemas,
-  parseAdminAuditQuery,
   parseAdminUsersQuery,
 } from "./admin-query";
 
@@ -115,28 +112,6 @@ describe("parseAdminUsersQuery", () => {
   it("rejects a non-object input", () => {
     expect(() => parseAdminUsersQuery("limit=10")).toThrow(ValidationError);
     expect(() => parseAdminUsersQuery(null)).toThrow(ValidationError);
-  });
-});
-
-describe("parseAdminAuditQuery", () => {
-  it("applies a bounded default", () => {
-    expect(parseAdminAuditQuery({})).toEqual({
-      limit: ADMIN_AUDIT_DEFAULT_LIMIT,
-    });
-  });
-
-  it("keeps the page bounded", () => {
-    expect(parseAdminAuditQuery({ limit: "5" })).toEqual({ limit: 5 });
-    expect(() =>
-      parseAdminAuditQuery({ limit: String(ADMIN_AUDIT_MAX_LIMIT + 1) }),
-    ).toThrow(ValidationError);
-    expect(() => parseAdminAuditQuery({ limit: "0" })).toThrow(ValidationError);
-  });
-
-  it("rejects an unknown parameter", () => {
-    expect(() => parseAdminAuditQuery({ actorUserId: "actor-1" })).toThrow(
-      ValidationError,
-    );
   });
 });
 

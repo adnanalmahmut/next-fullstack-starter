@@ -142,23 +142,45 @@ export async function makeSoleAdmin(email: string): Promise<number> {
 
 export type AuditRow = {
   readonly action: string;
-  readonly actorUserId: string;
-  readonly targetUserId: string;
+  readonly actorType: string;
+  readonly actorId: string;
+  readonly actorSessionId: string | null;
+  readonly resourceType: string;
+  readonly resourceId: string;
+  readonly result: string;
   readonly requestId: string | null;
   readonly metadata: unknown;
 };
 
-export async function findAuditRows(targetUserId: string): Promise<AuditRow[]> {
+/**
+ * The records for one resource, read from the application audit trail.
+ *
+ * `audit_record` is the live table; `authorization_audit_record` is frozen and
+ * receives no new rows, which `findLegacyAuditRowCount` is here to prove.
+ */
+export async function findAuditRows(resourceId: string): Promise<AuditRow[]> {
   return withClient(async (client) => {
     const result = await client.query<AuditRow>(
-      `SELECT action::text AS action, "actorUserId", "targetUserId", "requestId", metadata
-       FROM authorization_audit_record
-       WHERE "targetUserId" = $1
+      `SELECT action, "actorType"::text AS "actorType", "actorId", "actorSessionId",
+              "resourceType", "resourceId", "result"::text AS "result",
+              "requestId", metadata
+       FROM audit_record
+       WHERE "resourceId" = $1
        ORDER BY "occurredAt" DESC, id DESC`,
-      [targetUserId],
+      [resourceId],
     );
 
     return result.rows;
+  });
+}
+
+export async function findLegacyAuditRowCount(): Promise<number> {
+  return withClient(async (client) => {
+    const result = await client.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM authorization_audit_record",
+    );
+
+    return Number(result.rows[0].count);
   });
 }
 
@@ -180,7 +202,7 @@ export async function removeTestAccounts(): Promise<void> {
     }
 
     await client.query(
-      'DELETE FROM authorization_audit_record WHERE "actorUserId" = ANY($1) OR "targetUserId" = ANY($1)',
+      'DELETE FROM audit_record WHERE "actorId" = ANY($1) OR "resourceId" = ANY($1)',
       [ids],
     );
     await client.query('DELETE FROM "session" WHERE "userId" = ANY($1)', [ids]);

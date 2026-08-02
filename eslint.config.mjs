@@ -44,6 +44,11 @@ const restrictedImportPatterns = {
     message:
       "The worker entry points are a process, not a library. Nothing may import them.",
   },
+  audit: {
+    regex: "^@/platform/audit(?:/|$)",
+    message:
+      "This layer must not depend on the audit platform. What is worth recording is a decision the call site makes, not something an adapter or an infrastructure client can know.",
+  },
   cache: {
     regex: "^@/platform/cache(?:/|$)",
     message:
@@ -143,6 +148,7 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.database,
         restrictedImportPatterns.postgres,
         restrictedImportPatterns.queue,
+        restrictedImportPatterns.audit,
         restrictedImportPatterns.jobs,
         restrictedImportPatterns.betterAuth,
         restrictedImportPatterns.react,
@@ -190,6 +196,7 @@ const eslintConfig = defineConfig([
             restrictedImportPatterns.database,
             restrictedImportPatterns.postgres,
             restrictedImportPatterns.queue,
+            restrictedImportPatterns.audit,
             restrictedImportPatterns.jobs,
             restrictedImportPatterns.betterAuth,
             restrictedImportPatterns.react,
@@ -232,6 +239,7 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.database,
         restrictedImportPatterns.postgres,
         restrictedImportPatterns.queue,
+        restrictedImportPatterns.audit,
         restrictedImportPatterns.jobs,
         restrictedImportPatterns.betterAuth,
         restrictedImportPatterns.react,
@@ -275,6 +283,7 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.next,
         restrictedImportPatterns.translations,
         restrictedImportPatterns.betterAuth,
+        restrictedImportPatterns.audit,
         restrictedImportPatterns.cache,
         restrictedImportPatterns.concurrency,
         restrictedImportPatterns.worker,
@@ -307,6 +316,90 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    name: "architecture/audit-platform",
+    files: ["src/platform/audit/**/*.{ts,tsx}"],
+    ignores: ["src/platform/audit/presentation/**/*.{ts,tsx}"],
+    // The audit platform owns the record contract and the table behind it, so
+    // Prisma is deliberately not restricted: an audit record has to be written
+    // in the caller's transaction, and the reader is a keyset query.
+    //
+    // Everything else is restricted, and the direction of the dependency is the
+    // reason. Authentication imports the audit platform; the audit platform must
+    // never import authentication, or it would be unusable by a module that has
+    // no opinion about how this application authenticates. It must not know a
+    // business module, must not render, must not read a request, and must not
+    // reach an infrastructure client: an audit write is a durable record, not
+    // something to cache, queue, or coordinate with a lock.
+    rules: {
+      "no-restricted-imports": restrictImports(
+        restrictedImportPatterns.react,
+        restrictedImportPatterns.next,
+        restrictedImportPatterns.translations,
+        restrictedImportPatterns.betterAuth,
+        restrictedImportPatterns.redis,
+        restrictedImportPatterns.queue,
+        restrictedImportPatterns.jobs,
+        restrictedImportPatterns.worker,
+        restrictedImportPatterns.cache,
+        restrictedImportPatterns.concurrency,
+        restrictedImportPatterns.postgres,
+        {
+          regex: "^@/platform/auth(?:/|$)",
+          message:
+            "The audit platform must not depend on authentication. It receives a generic actor; converting a verified session into one belongs to the area that owns the session.",
+        },
+        {
+          regex: "^@/platform/(?:actions|http|proxy)(?:/|$)",
+          message:
+            "The audit platform must not depend on an application adapter.",
+        },
+        {
+          regex: "^@/(?:app|modules|ui)(?:/|$)",
+          message:
+            "The audit platform must not depend on application routing, business modules, or UI code.",
+        },
+        {
+          regex: "^(?:\\.\\.?/)+(?:[^/]+/)*(?:app|modules|ui)(?:/|$)",
+          message:
+            "The audit platform must not reach application routing, business modules, or UI code through relative imports.",
+        },
+      ),
+    },
+  },
+  {
+    name: "architecture/audit-presentation",
+    files: ["src/platform/audit/presentation/**/*.{ts,tsx}"],
+    // Rendering is the point of these files, so React is allowed. Persistence,
+    // authentication, and translation are not: every piece of language arrives
+    // as a prop from the composition root, which is what lets one component
+    // render any module's actions.
+    rules: {
+      "no-restricted-imports": restrictImports(
+        restrictedImportPatterns.prisma,
+        restrictedImportPatterns.database,
+        restrictedImportPatterns.postgres,
+        restrictedImportPatterns.redis,
+        restrictedImportPatterns.queue,
+        restrictedImportPatterns.jobs,
+        restrictedImportPatterns.cache,
+        restrictedImportPatterns.concurrency,
+        restrictedImportPatterns.betterAuth,
+        restrictedImportPatterns.translations,
+        restrictedImportPatterns.serverOnly,
+        {
+          regex: "^@/platform/auth(?:/|$)",
+          message:
+            "The audit presentation must not depend on authentication; it renders a generic record.",
+        },
+        {
+          regex: "^@/(?:app|modules)(?:/|$)",
+          message:
+            "The audit presentation must not depend on application routing or business modules.",
+        },
+      ),
+    },
+  },
+  {
     name: "architecture/worker-entry-points",
     files: ["src/worker/**/*.ts"],
     // A worker entry point owns a process: signal handlers, an exit code, and
@@ -322,6 +415,7 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.redis,
         restrictedImportPatterns.prisma,
         restrictedImportPatterns.postgres,
+        restrictedImportPatterns.audit,
         restrictedImportPatterns.cache,
         restrictedImportPatterns.concurrency,
         {
@@ -379,6 +473,7 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.redis,
         restrictedImportPatterns.betterAuth,
         restrictedImportPatterns.queue,
+        restrictedImportPatterns.audit,
         restrictedImportPatterns.jobs,
         {
           regex: "^@/modules(?:/|$)",
@@ -415,6 +510,7 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.postgres,
         restrictedImportPatterns.redis,
         restrictedImportPatterns.queue,
+        restrictedImportPatterns.audit,
         restrictedImportPatterns.jobs,
         restrictedImportPatterns.betterAuth,
         restrictedImportPatterns.react,
@@ -459,6 +555,7 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.postgres,
         restrictedImportPatterns.redis,
         restrictedImportPatterns.queue,
+        restrictedImportPatterns.audit,
         restrictedImportPatterns.jobs,
         restrictedImportPatterns.betterAuth,
         restrictedImportPatterns.react,

@@ -88,11 +88,23 @@
       "occurredAtHeader": "الوقت",
       "actionHeader": "العملية",
       "actorHeader": "المنفِّذ",
-      "targetHeader": "الهدف",
+      "resourceHeader": "المورد",
+      "resultHeader": "النتيجة",
       "detailHeader": "التفصيل",
       "noDetail": "—",
       "emptyTitle": "لا سجلات بعد",
       "emptyDescription": "يظهر سجل هنا بعد اكتمال تغيير إداري مدعوم.",
+      "nextPage": "الصفحة التالية",
+      "paginationLabel": "تصفح سجل التدقيق",
+      "actorTypes": {
+        "user": "مستخدم",
+        "system": "النظام"
+      },
+      "results": {
+        "succeeded": "نجحت",
+        "failed": "فشلت",
+        "denied": "رُفضت"
+      },
       "actions": {
         "roleSet": "تغيير الدور",
         "sessionsRevoked": "إبطال الجلسات"

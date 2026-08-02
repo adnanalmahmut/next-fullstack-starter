@@ -17,7 +17,7 @@ return-to.ts               pure safe-redirect policy
 session.server.ts          server-side session reads (server-only)
 presentation/login-form.tsx    client boundary for sign-in
 presentation/logout-button.tsx client boundary for sign-out
-authorization/             capability permissions, actor, policies, audit trail
+authorization/             capability permissions, actor, policies, audit actions
 ```
 
 ## Authorization
@@ -34,14 +34,32 @@ policies/                         pure resource-level decisions
 admin-endpoints.ts                the allowlist of Better Auth admin endpoints
 admin-guard.server.ts             the Better Auth hooks that enforce it
 admin-users.service.server.ts     the supported administrative operations
-admin-audit.service.server.ts     the bounded audit read
-audit/                            the append-only audit trail
+audit/                            the identity audit actions and their recorder
 identity-read.repository.server.ts bounded read-only identity queries
 presentation/                     the administration area UI, copy via props
 ```
 
 The architectural policy is documented in
 [`docs/architecture/authorization-admin-access-control.md`](../../../docs/architecture/authorization-admin-access-control.md).
+
+### The audit trail is not owned here
+
+`audit/` holds three small files and no storage:
+
+```text
+identity-audit-actions.ts        the two identity actions, via defineAuditAction
+identity-audit-actor.ts          Actor -> AuditActor, dropping everything else
+record-identity-audit.server.ts  the post-commit write and the success log
+```
+
+The record, the table, the reader, and the presentation belong to
+[`@/platform/audit`](../audit/README.md). The dependency runs one way — this area
+imports that one, never the reverse — so a business module can audit without
+depending on how this application authenticates.
+
+The write is post-commit because Better Auth has already committed by the time
+the guard hook runs. `prisma/authorization.prisma` is frozen legacy storage: its
+rows were copied into `audit_record` once, and nothing writes there any more.
 
 ## Reading a session
 
@@ -94,8 +112,10 @@ Both reach the database through Better Auth on every call.
 - `tests/contract/authentication.contract.test.ts` asserts the configuration,
   boundaries, routes, migration, localization, and dependency pins.
 - `tests/contract/authorization-admin-access-control.contract.test.ts` asserts the
-  registry, the access-control shape, the endpoint allowlist, the audit model and
-  migration, and the administration surface.
+  registry, the access-control shape, the endpoint allowlist, the identity audit
+  actions, and the administration surface;
+  `tests/contract/application-audit-platform.contract.test.ts` asserts the audit
+  platform itself.
 - `tests/integration/authentication.integration.test.ts` and
   `tests/integration/authorization.integration.test.ts` exercise the real database
   and the real Better Auth instance.

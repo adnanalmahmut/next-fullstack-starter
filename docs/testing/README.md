@@ -42,6 +42,12 @@ tests/integration/**/*.integration.test.tsx
 pnpm test:integration
 ```
 
+One of them builds and drops its own disposable PostgreSQL schema.
+`audit-backfill.integration.test.ts` applies the migration history into a fresh
+schema, inserts legacy rows, runs `prisma migrate deploy`, and asserts what the
+backfill produced — because reading the SQL is not proof that it copies what it
+claims to. It never touches the development database and never resets anything.
+
 ### Contract tests
 
 Contract tests verify stable interfaces such as API payloads, external service

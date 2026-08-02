@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 
 import {
   findAuditRows,
+  findLegacyAuditRowCount,
   findTestUserId,
   grantAdminRole,
   makeSoleAdmin,
@@ -240,6 +241,7 @@ test.describe("authorization", () => {
     request,
     baseURL,
   }) => {
+    const legacyRowsBefore = await findLegacyAuditRowCount();
     const admin = await signUpAdmin(request, baseURL ?? "", "flow-ar");
     const target = await signUp(request, baseURL ?? "", "flow-ar-target");
     const consoleErrors: string[] = [];
@@ -326,16 +328,42 @@ test.describe("authorization", () => {
     expect(revoke.body).toEqual({ data: null });
 
     await page.goto("/ar/admin/audit");
-    await expect(
-      page.locator('[data-action="identity.session.revoked"]'),
-    ).toHaveCount(1);
+
+    const revokedRow = page.locator('[data-action="identity.session.revoked"]');
+
+    await expect(revokedRow).toHaveCount(1);
+    await expect(revokedRow).toHaveAttribute("data-result", "succeeded");
+    // The generic columns: who, what it happened to, and how it ended.
+    await expect(revokedRow).toContainText("إبطال الجلسات");
+    await expect(revokedRow).toContainText("نجحت");
+    await expect(revokedRow).toContainText(admin.userId);
+    await expect(revokedRow).toContainText(target.userId);
+    await expect(revokedRow).toContainText("identity.user");
+    await expect(revokedRow).toContainText("جميع الجلسات");
+
+    // Nothing beyond the allowlisted detail reaches the page.
+    const rendered = (await page.locator("body").innerHTML()) ?? "";
+
+    expect(rendered).not.toContain(target.email);
+    expect(rendered).not.toContain(admin.email);
+    expect(rendered).not.toContain("actorSessionId");
+    expect(rendered).not.toContain("&quot;scope&quot;");
 
     const rows = await findAuditRows(target.userId);
 
     expect(rows).toHaveLength(2);
     expect(rows[0].action).toBe("identity.session.revoked");
+    expect(rows[0].actorType).toBe("user");
+    expect(rows[0].resourceType).toBe("identity.user");
+    expect(rows[0].result).toBe("succeeded");
     expect(rows[0].requestId).not.toBeNull();
+    // Stored for investigation, and rendered by nothing.
+    expect(rows[0].actorSessionId).not.toBeNull();
+    expect(rendered).not.toContain(rows[0].actorSessionId ?? "session");
     expect(JSON.stringify(rows)).not.toContain(target.email);
+
+    // The frozen table receives no new rows.
+    expect(await findLegacyAuditRowCount()).toBe(legacyRowsBefore);
   });
 
   test("lets an administrator work through the area in English", async ({
@@ -545,7 +573,7 @@ test.describe("authorization", () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0].action).toBe("identity.session.revoked");
-    expect(rows[0].actorUserId).toBe(admin.userId);
+    expect(rows[0].actorId).toBe(admin.userId);
     expect(rows[0].requestId).not.toBeNull();
   });
 
@@ -586,6 +614,92 @@ test.describe("authorization", () => {
     );
 
     await targetContext.close();
+  });
+
+  test("pages the audit trail by cursor in the browser", async ({
+    page,
+    request,
+    baseURL,
+  }) => {
+    const admin = await signUpAdmin(request, baseURL ?? "", "audit-page");
+    const first = await signUp(request, baseURL ?? "", "audit-page-first");
+    const second = await signUp(request, baseURL ?? "", "audit-page-second");
+
+    await signIn(page, "en", admin);
+
+    // Two records, so there is more than one page at a limit of one.
+    for (const target of [first, second]) {
+      expect(
+        (
+          await sendJson(
+            page,
+            "POST",
+            `/api/v1/admin/users/${target.userId}/sessions/revoke`,
+          )
+        ).status,
+      ).toBe(200);
+    }
+
+    // The API is the bounded surface, and it refuses an offset outright.
+    const firstApiPage = await readJson(page, "/api/v1/admin/audit?limit=1");
+    const firstBody = firstApiPage.body as {
+      data: { records: Array<{ id: string }>; nextCursor: string | null };
+    };
+
+    expect(firstApiPage.status).toBe(200);
+    expect(firstBody.data.records).toHaveLength(1);
+    expect(firstBody.data.nextCursor).not.toBeNull();
+    expect((await readJson(page, "/api/v1/admin/audit?offset=1")).status).toBe(
+      400,
+    );
+
+    const secondApiPage = await readJson(
+      page,
+      `/api/v1/admin/audit?limit=1&cursor=${encodeURIComponent(
+        firstBody.data.nextCursor as string,
+      )}`,
+    );
+    const secondBody = secondApiPage.body as {
+      data: { records: Array<{ id: string }> };
+    };
+
+    expect(secondApiPage.status).toBe(200);
+    expect(secondBody.data.records[0]?.id).not.toBe(
+      firstBody.data.records[0]?.id,
+    );
+
+    // And the page offers the same movement as a locale-aware link.
+    await page.goto("/en/admin/audit");
+
+    const rowsOnFirstPage = await page
+      .locator('[data-slot="admin-audit-row"]')
+      .count();
+
+    expect(rowsOnFirstPage).toBeGreaterThan(0);
+
+    const nextPage = page.locator('[data-slot="admin-audit-next-page"]');
+
+    if ((await nextPage.count()) > 0) {
+      const firstRowResource = await page
+        .locator('[data-slot="admin-audit-row"]')
+        .first()
+        .innerText();
+
+      await nextPage.click();
+      await expect(page).toHaveURL(/\/en\/admin\/audit\?cursor=/);
+      await expect(
+        page.locator('[data-slot="admin-audit-row"]').first(),
+      ).not.toHaveText(firstRowResource);
+    }
+
+    // A malformed cursor is a bad URL, not a server error. The page is
+    // partially prerendered, so its shell is already flushed by the time the
+    // cursor is read and the status stays 200; what the visitor gets is the
+    // not-found body rather than a trail paged from the beginning.
+    await page.goto("/en/admin/audit?cursor=not-a-cursor");
+
+    await expect(page.locator('[data-slot="admin-audit-list"]')).toHaveCount(0);
+    await expect(page.locator('[data-slot="admin-audit-row"]')).toHaveCount(0);
   });
 
   test("answers the versioned API contract over the wire", async ({

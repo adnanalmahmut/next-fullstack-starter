@@ -99,9 +99,7 @@ afterEach(async () => {
 afterAll(async () => {
   restoreRedisUrl();
   await cleanupJobsRun(CORRELATION);
-  await database.authorizationAuditRecord.deleteMany({
-    where: { requestId: CORRELATION },
-  });
+  await database.verification.deleteMany({ where: { value: CORRELATION } });
   await database.$disconnect();
 });
 

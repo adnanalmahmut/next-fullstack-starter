@@ -24,12 +24,12 @@ const {
   revokeAdminUserSessions,
   setAdminUserRole,
 } = await import("@/platform/auth/authorization/admin-users.service.server");
-const { listAuthorizationAudit } =
-  await import("@/platform/auth/authorization/admin-audit.service.server");
+const { createAuditCatalog, listAuditRecords } =
+  await import("@/platform/audit/index.server");
 const { countOtherAdmins } =
   await import("@/platform/auth/authorization/identity-read.repository.server");
-const { AUDIT_ACTION } =
-  await import("@/platform/auth/authorization/audit/audit-action");
+const { IDENTITY_AUDIT_ACTION, IDENTITY_AUDIT_ACTIONS } =
+  await import("@/platform/auth/authorization/audit/identity-audit-actions");
 const { ADMIN_ROLE, USER_ROLE } =
   await import("@/platform/auth/authorization/role");
 const {
@@ -74,11 +74,11 @@ async function removeUsers(userIds: readonly string[]) {
 
   // The audit trail has no foreign key, so its rows are removed explicitly.
   // Child rows come before the parent, so the cleanup does not rely on cascade.
-  await database.authorizationAuditRecord.deleteMany({
+  await database.auditRecord.deleteMany({
     where: {
       OR: [
-        { actorUserId: { in: [...userIds] } },
-        { targetUserId: { in: [...userIds] } },
+        { actorId: { in: [...userIds] } },
+        { resourceId: { in: [...userIds] } },
       ],
     },
   });
@@ -190,12 +190,30 @@ async function demoteOtherTestAdmins(exceptUserId: string) {
   });
 }
 
-async function auditFor(targetUserId: string) {
-  return database.authorizationAuditRecord.findMany({
-    where: { targetUserId },
+async function auditFor(resourceId: string) {
+  return database.auditRecord.findMany({
+    where: { resourceId },
     orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
   });
 }
+
+/**
+ * The rows the frozen table holds.
+ *
+ * Read directly rather than through a Prisma delegate: no production code path
+ * may reach `authorization_audit_record` any more, and a contract test refuses
+ * the delegate name across `src`. Reading it here is how "the legacy table
+ * receives no new rows" is proven rather than assumed.
+ */
+async function legacyRowCount(): Promise<number> {
+  const [row] = await database.$queryRaw<Array<{ count: bigint }>>`
+    SELECT count(*) AS count FROM "authorization_audit_record"
+  `;
+
+  return Number(row.count);
+}
+
+const auditCatalog = createAuditCatalog([...IDENTITY_AUDIT_ACTIONS]);
 
 beforeAll(async () => {
   assertTestDatabase();
@@ -372,13 +390,13 @@ describe("capability enforcement", () => {
 
     await expect(
       requireAnyPermission(adminActor, [
-        PERMISSION.IDENTITY_AUDIT_READ,
+        PERMISSION.AUDIT_RECORD_READ,
         PERMISSION.IDENTITY_USER_LIST,
       ]),
     ).resolves.toEqual(adminActor);
     await expect(
       requireAnyPermission(userActor, [
-        PERMISSION.IDENTITY_AUDIT_READ,
+        PERMISSION.AUDIT_RECORD_READ,
         PERMISSION.IDENTITY_USER_LIST,
       ]),
     ).rejects.toThrow(ForbiddenError);
@@ -391,7 +409,7 @@ describe("capability enforcement", () => {
     await expect(
       requireAllPermissions(actor, [
         PERMISSION.IDENTITY_USER_LIST,
-        PERMISSION.IDENTITY_AUDIT_READ,
+        PERMISSION.AUDIT_RECORD_READ,
       ]),
     ).resolves.toEqual(actor);
     await expect(
@@ -697,10 +715,13 @@ describe("audit trail", () => {
 
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({
-      action: "USER_ROLE_SET",
-      actorUserId: admin.userId,
+      action: IDENTITY_AUDIT_ACTION.USER_ROLE_SET,
+      actorType: "USER",
+      actorId: admin.userId,
       actorSessionId: actor.sessionId,
-      targetUserId: target.userId,
+      resourceType: "identity.user",
+      resourceId: target.userId,
+      result: "SUCCEEDED",
       metadata: { role: ADMIN_ROLE },
     });
   });
@@ -719,11 +740,35 @@ describe("audit trail", () => {
 
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({
-      action: "SESSION_REVOKED",
-      actorUserId: admin.userId,
-      targetUserId: target.userId,
+      action: IDENTITY_AUDIT_ACTION.SESSION_REVOKED,
+      actorId: admin.userId,
+      // The revocation targets a user, which is why the resource type is not
+      // derived from the action name.
+      resourceType: "identity.user",
+      resourceId: target.userId,
+      result: "SUCCEEDED",
       metadata: { scope: "all" },
     });
+  });
+
+  it("writes only to the new trail and leaves the frozen table alone", async () => {
+    const before = await legacyRowCount();
+    const admin = await createAdmin("audit-legacy");
+    const target = await createUser("audit-legacy-target");
+    const actor = await actorFor(admin.headers);
+
+    await setAdminUserRole(
+      { actor, headers: admin.headers },
+      target.userId,
+      ADMIN_ROLE,
+    );
+    await revokeAdminUserSessions(
+      { actor, headers: admin.headers },
+      target.userId,
+    );
+
+    expect(await auditFor(target.userId)).toHaveLength(2);
+    expect(await legacyRowCount()).toBe(before);
   });
 
   it("captures the request id when the caller propagates one", async () => {
@@ -811,7 +856,7 @@ describe("audit trail", () => {
     expect(await auditFor(MISSING_USER_ID)).toHaveLength(0);
   });
 
-  it("reads the trail newest first and requires the capability", async () => {
+  it("reads the trail newest first through the generic reader", async () => {
     const admin = await createAdmin("audit-read");
     const first = await createUser("audit-read-first");
     const second = await createUser("audit-read-second");
@@ -827,55 +872,61 @@ describe("audit trail", () => {
       ADMIN_ROLE,
     );
 
-    const page = await listAuthorizationAudit(
-      { actor, headers: admin.headers },
-      { limit: 50 },
-    );
+    const page = await listAuditRecords(auditCatalog, { limit: 50 });
     const positions = [first.userId, second.userId].map((userId) =>
-      page.records.findIndex((record) => record.targetUserId === userId),
+      page.records.findIndex((record) => record.resource.id === userId),
     );
 
     expect(positions[0]).toBeGreaterThanOrEqual(0);
     expect(positions[1]).toBeGreaterThanOrEqual(0);
     expect(positions[1]).toBeLessThan(positions[0]);
 
-    // The reader contract carries the stable action names, not the storage labels.
+    // The reader contract carries the stable action names, not a storage label.
     expect(page.records[positions[0]].action).toBe(
-      AUDIT_ACTION.SESSION_REVOKED,
+      IDENTITY_AUDIT_ACTION.SESSION_REVOKED,
     );
-    expect(page.records[positions[1]].action).toBe(AUDIT_ACTION.USER_ROLE_SET);
+    expect(page.records[positions[1]].action).toBe(
+      IDENTITY_AUDIT_ACTION.USER_ROLE_SET,
+    );
+    expect(page.records[positions[1]].metadata).toEqual({ role: ADMIN_ROLE });
 
     for (const record of page.records) {
       expect(Object.keys(record).sort()).toEqual([
         "action",
-        "actorUserId",
+        "actor",
         "id",
         "metadata",
         "occurredAt",
         "requestId",
-        "targetUserId",
+        "resource",
+        "result",
       ]);
     }
+  });
 
-    // A user whose sessions this test did not revoke, so the refusal is about the
-    // missing capability rather than a missing session.
+  it("requires the read capability at the entry point", async () => {
+    // The generic reader takes no actor: the platform must stay usable by a
+    // module that knows nothing about this application's authentication, so the
+    // capability is required by the route and the page instead.
+    const admin = await createAdmin("audit-read-admin");
     const reader = await createUser("audit-read-reader");
 
     await expect(
-      listAuthorizationAudit(
-        { actor: await actorFor(reader.headers), headers: reader.headers },
-        { limit: 10 },
+      requirePermission(
+        await actorFor(admin.headers),
+        PERMISSION.AUDIT_RECORD_READ,
+      ),
+    ).resolves.toBeDefined();
+    await expect(
+      requirePermission(
+        await actorFor(reader.headers),
+        PERMISSION.AUDIT_RECORD_READ,
       ),
     ).rejects.toThrow(ForbiddenError);
   });
 
   it("bounds the page it returns", async () => {
-    const admin = await createAdmin("audit-bounded");
-    const actor = await actorFor(admin.headers);
-    const page = await listAuthorizationAudit(
-      { actor, headers: admin.headers },
-      { limit: 1 },
-    );
+    const page = await listAuditRecords(auditCatalog, { limit: 1 });
 
     expect(page.limit).toBe(1);
     expect(page.records.length).toBeLessThanOrEqual(1);
@@ -1131,9 +1182,12 @@ describe("direct Better Auth admin endpoints", () => {
 
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({
-      action: "SESSION_REVOKED",
-      actorUserId: admin.userId,
-      targetUserId: target.userId,
+      action: IDENTITY_AUDIT_ACTION.SESSION_REVOKED,
+      actorType: "USER",
+      actorId: admin.userId,
+      resourceType: "identity.user",
+      resourceId: target.userId,
+      result: "SUCCEEDED",
       requestId: REQUEST_ID,
       metadata: { scope: "all" },
     });

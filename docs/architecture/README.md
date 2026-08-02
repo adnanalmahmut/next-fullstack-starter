@@ -16,6 +16,7 @@ System-level architectural documentation lives here.
 - [Redis Foundation](./redis-foundation.md)
 - [Cache and Concurrency Controls](./cache-and-concurrency-controls.md)
 - [Background Jobs and Transactional Outbox](./background-jobs-and-outbox.md)
+- [Application Audit Platform](./application-audit-platform.md)
 - [Design System](../design-system/README.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)
@@ -41,8 +42,7 @@ Current documentation covers:
 - Email and password authentication, database-backed sessions, and server-side
   session validation.
 - Capability permissions, a normalized actor, resource policies, the
-  least-privilege administrator role, the protected administration area, and the
-  authorization audit trail.
+  least-privilege administrator role, and the protected administration area.
 - The single Server Action adapter: declared authorization modes, a fixed
   execution order, inferred input and output types, lifecycle hooks, allowlisted
   logging, and declarative post-success cache invalidation.
@@ -62,6 +62,10 @@ Current documentation covers:
   separate BullMQ worker process, a versioned job registry, bounded retries and
   timeouts, idempotent database execution, two dead-letter stores, and a removal
   procedure that touches no business code.
+- A generic application audit platform: module-owned action definitions, a
+  generic actor and result contract, a closed metadata policy, a transactional
+  and a post-commit writer, append-only storage, bounded keyset paging, and one
+  admin reader that renders any module's actions.
 - Semantic design tokens, reusable presentation primitives, and RTL/LTR UI.
 
 Future documentation may cover:

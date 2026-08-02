@@ -21,14 +21,14 @@ permissions and cannot be granted.
 
 The permissions this change introduces are the complete set:
 
-| Permission                | Meaning                            |
-| ------------------------- | ---------------------------------- |
-| `identity.admin.access`   | Reach the administration area      |
-| `identity.user.list`      | List users                         |
-| `identity.user.read`      | Read one user                      |
-| `identity.user.set-role`  | Replace a user's role              |
-| `identity.session.revoke` | Revoke every session of a user     |
-| `identity.audit.read`     | Read the authorization audit trail |
+| Permission                | Meaning                          |
+| ------------------------- | -------------------------------- |
+| `identity.admin.access`   | Reach the administration area    |
+| `identity.user.list`      | List users                       |
+| `identity.user.read`      | Read one user                    |
+| `identity.user.set-role`  | Replace a user's role            |
+| `identity.session.revoke` | Revoke every session of a user   |
+| `audit.record.read`       | Read the application audit trail |
 
 ## Registry
 
@@ -56,8 +56,13 @@ Better Auth resource keys:
 identity.admin     access
 identity.user      list, read, set-role
 identity.session   revoke
-identity.audit     read
+audit.record       read
 ```
+
+`audit.record.read` is owned by the audit platform, not by identity. It replaced
+`identity.audit.read` when the trail became generic: a permission scoped to
+identity would have granted a reader access to records that have nothing to do
+with identity. There is no compatibility alias for the old name.
 
 ## Capability versus resource policy
 
@@ -284,11 +289,12 @@ list users
 get user
 set user role
 revoke every session of a target user
-list recent authorization audit records
+list the application audit trail
 ```
 
 Each one goes through Better Auth (`listUsers`, `getUser`, `setRole`,
-`revokeUserSessions`) or, for the audit trail, through the audit repository.
+`revokeUserSessions`) or, for the audit trail, through
+[the audit platform](./application-audit-platform.md).
 Nothing writes to a Better Auth owned table directly, and no provider record
 reaches a response or a page: every result is an allowlisted DTO.
 
@@ -378,93 +384,42 @@ error response; over HTTP the router turns the same refusal into the right statu
 
 ## Audit trail
 
-`prisma/authorization.prisma` owns `AuthorizationAuditRecord`, mapped to
-`authorization_audit_record`.
+The trail itself is no longer owned here. `src/platform/audit` owns the record,
+its storage, its reader, and its presentation; this area owns the two identity
+actions written to it and the guard that writes them. The full policy is in
+[`application-audit-platform.md`](./application-audit-platform.md).
 
-| Column           | Notes                                                |
-| ---------------- | ---------------------------------------------------- |
-| `id`             | Primary key                                          |
-| `occurredAt`     | Database default `CURRENT_TIMESTAMP`                 |
-| `actorUserId`    | Who performed the change                             |
-| `actorSessionId` | Stored for investigation, never exposed to a reader  |
-| `action`         | Database enum, labelled with the stable action names |
-| `targetUserId`   | Which user the change was about                      |
-| `requestId`      | Optional, taken from `x-request-id` when propagated  |
-| `metadata`       | Optional, allowlisted shape only                     |
-
-Audited actions:
+What is still authorization's:
 
 ```text
-identity.user.role-set
-identity.session.revoked
+identity.user.role-set     resource identity.user, metadata { role }
+identity.session.revoked   resource identity.user, metadata { scope: "all" }
 ```
 
-Only a mutation that actually succeeded is recorded, exactly once, whether it came
-through `/api/v1/admin` or through `/api/auth/admin`. Reads are not audited.
+Both are declared with `defineAuditAction` in
+`src/platform/auth/authorization/audit/identity-audit-actions.ts`, and both
+record `identity.user`, because a user is what each one happened to.
 
-### Data minimization
+`toAuditActor` reduces the verified `Actor` to what a record may hold — a user
+identifier and a session identifier — dropping the name, the address, and the
+roles. The write goes through `recordAuditPostCommit`, because Better Auth has
+already committed by the time the guard hook runs and there is no transaction of
+ours left to join.
 
-Allowlisted metadata is the whole surface:
+The semantics are unchanged from before the platform existed: a record only
+after a mutation actually succeeded, exactly once, whether it came through
+`/api/v1/admin` or `/api/auth/admin`; no record for a refusal; reads are not
+audited; and a failed audit write never turns a completed change into a
+retryable failure. A lost record is still possible and still has no
+reconciliation path.
 
-```json
-{ "role": "user" }
-{ "role": "admin" }
-{ "scope": "all" }
-```
+### Legacy storage
 
-Never stored: a password or password hash, a session token, a cookie, an
-authorization header, an email address, a display name, an IP address, a user
-agent, a raw request body, a raw provider error, a stack trace, or arbitrary
-metadata. Metadata is built by pure builders and validated again on read, so a
-value written by an unexpected path cannot reach a caller.
-
-### Properties
-
-The trail is append-only from the application's perspective. The repository
-exposes one append and one bounded, newest-first read; there is no update, no
-delete, and no export. There is no foreign key to `user` or `session`, so a record
-outlives what it refers to and no cascade can remove it.
-
-Indexes exist for the queries that are actually run:
-
-```text
-(occurredAt)                  the newest-first listing
-(actorUserId, occurredAt)     what did this administrator do
-(targetUserId, occurredAt)    what happened to this user
-```
-
-### When the record cannot be stored
-
-A completed administrative change must not be reported back as a retryable
-failure, because retrying would apply it twice. So a storage failure is recorded
-as a high-severity structured error carrying the action, the actor id, the target
-id, the request id, and a safe error code, and the operation still succeeds.
-
-The known limitation: a lost record leaves no application-level reconciliation
-path. There is no queue and no outbox for it yet. Closing that gap means writing
-the record in the same transaction as the change, which the provider's endpoint
-does not expose today, or adding an outbox; both are deferred.
-
-## Migration
-
-```text
-prisma/migrations/<timestamp>_establish_authorization_admin_access_control
-```
-
-Additive only:
-
-- `CREATE TYPE "authorization_audit_action"` with the two action labels.
-- `CREATE TABLE "authorization_audit_record"`.
-- Three `CREATE INDEX` statements.
-
-No `DROP`, no `TRUNCATE`, no `DELETE`, no `UPDATE`, no `INSERT`, no data backfill,
-no foreign key, and no change to a Better Auth owned model. The earlier migration
-is untouched.
-
-It was created against a disposable test database with `migrate dev
---create-only`, reviewed line by line, then applied with `migrate deploy`. A
-second `migrate deploy` reports no pending migrations, and a fresh database
-applies both migrations from scratch.
+`prisma/authorization.prisma` still declares `AuthorizationAuditRecord` and
+`AuthorizationAuditAction`, and both are **frozen**. Every row was copied once
+into `audit_record` by the migration that created it; nothing writes there any
+more, and no production code path names `database.authorizationAuditRecord`. The
+table is kept because it is the original of what was copied.
 
 ## Initial administrator provisioning
 
@@ -485,9 +440,13 @@ Stable event names:
 
 ```text
 authorization.access.denied
-authorization.audit.write_failed
 authorization.admin.operation_completed
 ```
+
+A failed audit write is reported by the audit platform as
+`audit.record.write_failed`, with its own field allowlist. There is one event for
+it rather than two, so an operator does not have to know which subsystem happened
+to be writing.
 
 A log line may carry `actorUserId`, `targetUserId`, an action, a permission, a
 request id, and a safe error code. It never carries a password, a session token, a
@@ -499,7 +458,7 @@ full URL with its query, a raw provider error, or Prisma error metadata.
 
 | Level       | What it proves                                                                                                                                                                                                                                     |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unit        | The registry, role normalization, actor normalization, capability semantics, both policies, the audit builders and allowlist, the endpoint allowlist, the DTOs, the query schemas, and the error mapping                                           |
+| Unit        | The registry, role normalization, actor normalization, capability semantics, both policies, the identity audit definitions and the actor projection, the endpoint allowlist, the DTOs, the query schemas, and the error mapping                    |
 | Integration | Real PostgreSQL and the real Better Auth instance: actors from real sessions, capability enforcement, every supported operation, both policies, session revocation, the audit trail, the direct plugin endpoints, and object-level response parity |
 | Contract    | The architecture boundaries, the access-control shape, the endpoint allowlist, the audit model and migration, the route and page surface, localization, and the absence of role comparisons and permission literals                                |
 | UI          | The administration presentation in Arabic RTL and English LTR, including the denied state and the absence of sensitive fields                                                                                                                      |
@@ -515,8 +474,9 @@ full URL with its query, a raw provider error, or Prisma error metadata.
 - An administration dashboard with metrics, and mutation controls in the UI.
 - Email notifications for administrative changes.
 - Audit export and retention.
-- A transactional or outbox-backed audit write, and reconciliation for a lost
-  record.
+- Reconciliation for an audit record lost by the post-commit write. A
+  transactional writer now exists in the audit platform, but the Better Auth
+  mutations cannot use it: they commit before the application is told.
 - A `defineRoute` factory with rate limiting, idempotency, and request logging.
 - A real 403 status for the administration pages, which needs the
   `authInterrupts` flag.

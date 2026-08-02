@@ -9,7 +9,7 @@ import {
   isAdminEndpointPath,
   isSelfScopedAdminEndpointPath,
 } from "./admin-endpoints";
-import { AUDIT_ACTION } from "./audit/audit-action";
+import { IDENTITY_AUDIT_ACTION } from "./audit/identity-audit-actions";
 import { PERMISSION } from "./permission-registry";
 
 /** Every admin endpoint Better Auth 1.6.25 exposes. */
@@ -62,8 +62,8 @@ describe("admin endpoint allowlist", () => {
       [
         ["/admin/list-users", null],
         ["/admin/get-user", null],
-        ["/admin/set-role", AUDIT_ACTION.USER_ROLE_SET],
-        ["/admin/revoke-user-sessions", AUDIT_ACTION.SESSION_REVOKED],
+        ["/admin/set-role", IDENTITY_AUDIT_ACTION.USER_ROLE_SET],
+        ["/admin/revoke-user-sessions", IDENTITY_AUDIT_ACTION.SESSION_REVOKED],
       ],
     );
   });
