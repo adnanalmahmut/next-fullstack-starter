@@ -63,13 +63,13 @@ describe("hasCapabilities", () => {
     expect(
       hasCapabilities(
         [ADMIN_ROLE],
-        [PERMISSION.IDENTITY_USER_LIST, PERMISSION.IDENTITY_AUDIT_READ],
+        [PERMISSION.IDENTITY_USER_LIST, PERMISSION.AUDIT_RECORD_READ],
       ),
     ).toBe(true);
     expect(
       hasCapabilities(
         [USER_ROLE],
-        [PERMISSION.IDENTITY_USER_LIST, PERMISSION.IDENTITY_AUDIT_READ],
+        [PERMISSION.IDENTITY_USER_LIST, PERMISSION.AUDIT_RECORD_READ],
       ),
     ).toBe(false);
   });

@@ -18,7 +18,7 @@ describe("permission registry", () => {
       "identity.user.read",
       "identity.user.set-role",
       "identity.session.revoke",
-      "identity.audit.read",
+      "audit.record.read",
     ]);
   });
 
@@ -40,12 +40,17 @@ describe("permission registry", () => {
   });
 
   it("uses the module.resource.action convention", () => {
+    // The owning module is whichever platform area the resource belongs to.
+    // Reading the audit trail is owned by the audit platform, not by identity,
+    // because any module can write to that trail.
+    const owners = new Set(["identity", "audit"]);
+
     for (const permission of PERMISSIONS) {
       const segments = permission.split(".");
 
       expect(segments, permission).toHaveLength(3);
       expect(permission).toBe(permission.toLowerCase());
-      expect(segments[0]).toBe("identity");
+      expect(owners.has(segments[0]), permission).toBe(true);
       expect(/^[a-z]+(?:-[a-z]+)*$/.test(segments[2]), permission).toBe(true);
     }
   });
@@ -113,11 +118,11 @@ describe("permission registry", () => {
     expect(
       toPermissionRequest([
         PERMISSION.IDENTITY_USER_READ,
-        PERMISSION.IDENTITY_AUDIT_READ,
+        PERMISSION.AUDIT_RECORD_READ,
       ]),
     ).toEqual({
       "identity.user": ["read"],
-      "identity.audit": ["read"],
+      "audit.record": ["read"],
     });
   });
 

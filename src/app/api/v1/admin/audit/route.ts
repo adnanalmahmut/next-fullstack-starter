@@ -1,20 +1,29 @@
-import { listAuthorizationAudit } from "@/platform/auth/authorization/admin-audit.service.server";
-import { adminInputSchemas } from "@/platform/auth/authorization/admin-query";
+import { APPLICATION_AUDIT_CATALOG } from "@/app/_composition/audit-catalog";
+import {
+  auditInputSchemas,
+  listAuditRecords,
+} from "@/platform/audit/index.server";
 import { PERMISSION } from "@/platform/auth/authorization/permission-registry";
 import { AUTHORIZATION_MODE, defineRoute } from "@/platform/http/index.server";
 
 /**
- * Lists the most recent authorization audit records.
+ * Lists the application audit trail, newest first.
  *
- * Reading the audit trail needs its own capability, and the page is bounded.
- * There is no endpoint that updates, deletes, or exports a record.
+ * The path is unchanged, but what it reads is not: it is the generic trail now,
+ * so a record written by any module appears here without this file being
+ * touched. What it needs from the application is the catalog, which is the only
+ * thing that can turn a stored action name back into a validated detail.
+ *
+ * Reading the trail needs its own capability, the page is bounded, and paging is
+ * by cursor. There is no endpoint that updates, deletes, or exports a record,
+ * because the platform has no such operation to expose.
  */
 export const GET = defineRoute({
-  name: "identity.admin.audit.list",
-  input: { query: adminInputSchemas.auditQuery },
+  name: "audit.record.list",
+  input: { query: auditInputSchemas.listQuery },
   authorization: {
     mode: AUTHORIZATION_MODE.PERMISSION,
-    permission: PERMISSION.IDENTITY_AUDIT_READ,
+    permission: PERMISSION.AUDIT_RECORD_READ,
   },
-  execute: ({ query, actor }) => listAuthorizationAudit({ actor }, query),
+  execute: ({ query }) => listAuditRecords(APPLICATION_AUDIT_CATALOG, query),
 });

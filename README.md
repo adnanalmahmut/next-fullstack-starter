@@ -208,6 +208,45 @@ See
 [`docs/architecture/background-jobs-and-outbox.md`](docs/architecture/background-jobs-and-outbox.md),
 including how to remove background jobs from a generated project.
 
+## Application Audit Trail
+
+`src/platform/audit` records what happened: an actor, an action, a resource, a
+result, and validated metadata. It is generic — the platform declares no action
+of its own, so a module declares its own and records it without importing
+anything from `platform/auth`.
+
+```ts
+const documentPublished = defineAuditAction({
+  name: "documents.document.published",
+  resourceType: "documents.document",
+  metadataSchema: z.object({ version: z.number().int().min(1) }).strict(),
+});
+
+await database.$transaction(async (tx) => {
+  const document = await tx.document.update({ ... });
+
+  await appendAuditRecord(tx, documentPublished, {
+    actor,
+    resourceId: document.id,
+    result: AUDIT_RESULT.SUCCEEDED,
+    requestId,
+    metadata: { version: document.version },
+  });
+});
+```
+
+The record and the change share a commit. Where there is no transaction to join
+— a change a provider already committed — `recordAuditPostCommit` answers `false`
+instead of throwing, because a completed change must not become a retryable
+failure.
+
+The trail is append-only, needs no Redis and no worker, and is read newest-first
+through `/api/v1/admin/audit` and `/[locale]/admin/audit`, bounded and paged by
+cursor, behind `audit.record.read`. Adding an audited action needs no migration.
+
+See
+[`docs/architecture/application-audit-platform.md`](docs/architecture/application-audit-platform.md).
+
 ## Verification
 
 Ensure the test database is running:

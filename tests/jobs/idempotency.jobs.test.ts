@@ -45,31 +45,30 @@ configureJobsForTest({
 });
 
 /**
- * The audit table stands in for a business effect.
+ * `Verification` stands in for a business effect.
  *
- * It already exists, is append-only, and has no foreign key to anything this
- * suite would have to create. Adding a fixture model to the production schema
- * to make a test read better is the one thing this change must not do.
+ * It already exists, is small, and has no foreign key to anything this suite
+ * would have to create. Adding a fixture model to the production schema to make
+ * a test read better is the one thing this change must not do — and the audit
+ * trail, which used to stand in here, is append-only storage rather than a
+ * scratch table.
  */
 async function applyEffect(
   tx: Parameters<Parameters<typeof database.$transaction>[0]>[0],
   subject: string,
 ): Promise<void> {
-  await tx.authorizationAuditRecord.create({
+  await tx.verification.create({
     data: {
-      actorUserId: `${CORRELATION}-actor`,
-      actorSessionId: `${CORRELATION}-session`,
-      action: "USER_ROLE_SET",
-      targetUserId: subject,
-      requestId: CORRELATION,
+      id: `${subject}-${randomUUID()}`,
+      identifier: subject,
+      value: CORRELATION,
+      expiresAt: new Date(Date.now() + 3_600_000),
     },
   });
 }
 
 function effectCount(subject: string): Promise<number> {
-  return database.authorizationAuditRecord.count({
-    where: { targetUserId: subject },
-  });
+  return database.verification.count({ where: { identifier: subject } });
 }
 
 const payloadSchema = z.object({ subject: z.string().min(1) }).strict();
@@ -152,9 +151,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await runtime.stop();
   await cleanupJobsRun(CORRELATION);
-  await database.authorizationAuditRecord.deleteMany({
-    where: { requestId: CORRELATION },
-  });
+  await database.verification.deleteMany({ where: { value: CORRELATION } });
   await database.jobExecutionReceipt.deleteMany({
     where: { jobName: JOB_NAME },
   });

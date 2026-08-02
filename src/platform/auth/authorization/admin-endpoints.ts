@@ -1,4 +1,7 @@
-import { AUDIT_ACTION, type AuditAction } from "./audit/audit-action";
+import {
+  IDENTITY_AUDIT_ACTION,
+  type IdentityAuditAction,
+} from "./audit/identity-audit-actions";
 import { PERMISSION, type Permission } from "./permission-registry";
 
 /**
@@ -27,8 +30,13 @@ export type AdminEndpointRule = Readonly<{
   path: string;
   /** The application capability the caller must hold. */
   permission: Permission;
-  /** The audit action a successful call produces, when it mutates state. */
-  audit: AuditAction | null;
+  /**
+   * The audit action a successful call produces, when it mutates state.
+   *
+   * The stable name rather than the definition object: this table is a routing
+   * concern, and the guard is the one place that needs the definition itself.
+   */
+  audit: IdentityAuditAction | null;
 }>;
 
 export const ADMIN_ENDPOINT_RULES: readonly AdminEndpointRule[] = [
@@ -45,12 +53,12 @@ export const ADMIN_ENDPOINT_RULES: readonly AdminEndpointRule[] = [
   {
     path: ADMIN_ENDPOINT.SET_ROLE,
     permission: PERMISSION.IDENTITY_USER_SET_ROLE,
-    audit: AUDIT_ACTION.USER_ROLE_SET,
+    audit: IDENTITY_AUDIT_ACTION.USER_ROLE_SET,
   },
   {
     path: ADMIN_ENDPOINT.REVOKE_USER_SESSIONS,
     permission: PERMISSION.IDENTITY_SESSION_REVOKE,
-    audit: AUDIT_ACTION.SESSION_REVOKED,
+    audit: IDENTITY_AUDIT_ACTION.SESSION_REVOKED,
   },
 ];
 

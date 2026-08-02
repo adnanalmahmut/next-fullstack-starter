@@ -88,11 +88,23 @@
       "occurredAtHeader": "When",
       "actionHeader": "Action",
       "actorHeader": "Actor",
-      "targetHeader": "Target",
+      "resourceHeader": "Resource",
+      "resultHeader": "Result",
       "detailHeader": "Detail",
       "noDetail": "—",
       "emptyTitle": "No records yet",
       "emptyDescription": "A record appears here after a supported administrative change completes.",
+      "nextPage": "Next page",
+      "paginationLabel": "Audit trail pagination",
+      "actorTypes": {
+        "user": "User",
+        "system": "System"
+      },
+      "results": {
+        "succeeded": "Succeeded",
+        "failed": "Failed",
+        "denied": "Denied"
+      },
       "actions": {
         "roleSet": "Role changed",
         "sessionsRevoked": "Sessions revoked"

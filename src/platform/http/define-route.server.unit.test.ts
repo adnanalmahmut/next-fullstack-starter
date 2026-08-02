@@ -531,7 +531,7 @@ describe("authorization", () => {
         mode: AUTHORIZATION_MODE.ANY_PERMISSION,
         permissions: [
           PERMISSION.IDENTITY_USER_LIST,
-          PERMISSION.IDENTITY_AUDIT_READ,
+          PERMISSION.AUDIT_RECORD_READ,
         ],
       },
     },
@@ -541,7 +541,7 @@ describe("authorization", () => {
         mode: AUTHORIZATION_MODE.ALL_PERMISSIONS,
         permissions: [
           PERMISSION.IDENTITY_USER_LIST,
-          PERMISSION.IDENTITY_AUDIT_READ,
+          PERMISSION.AUDIT_RECORD_READ,
         ],
       },
     },
@@ -577,7 +577,7 @@ describe("authorization", () => {
         mode: AUTHORIZATION_MODE.ALL_PERMISSIONS,
         permissions: [
           PERMISSION.IDENTITY_USER_LIST,
-          PERMISSION.IDENTITY_AUDIT_READ,
+          PERMISSION.AUDIT_RECORD_READ,
         ],
       },
       execute: ({ actor }) => ({ userId: actor.userId }),

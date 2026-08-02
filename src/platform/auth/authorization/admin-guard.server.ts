@@ -7,6 +7,7 @@ import {
 } from "better-auth/api";
 import * as z from "zod";
 
+import { AUDIT_RESULT } from "@/platform/audit/index.server";
 import {
   isValidRequestId,
   REQUEST_ID_HEADER,
@@ -26,11 +27,13 @@ import {
 } from "./admin-endpoints";
 import { toApiError } from "./api-error-mapping";
 import {
-  AUDIT_ACTION,
-  buildRoleSetMetadata,
-  buildSessionRevokedMetadata,
-} from "./audit/audit-action";
-import { recordAuthorizationAudit } from "./audit/record-audit.server";
+  IDENTITY_AUDIT_ACTION,
+  IDENTITY_REVOKE_SCOPE,
+  sessionRevokedAudit,
+  userRoleSetAudit,
+} from "./audit/identity-audit-actions";
+import { toAuditActor } from "./audit/identity-audit-actor";
+import { recordIdentityAudit } from "./audit/record-identity-audit.server";
 import { hasCapabilities } from "./capability";
 import {
   countOtherAdmins,
@@ -188,17 +191,19 @@ async function auditAdminMutation(ctx: AdminGuardContext): Promise<void> {
   }
 
   const requestId = readRequestId(ctx.headers);
+  // Reduced here rather than passed through: an audit record may hold an actor's
+  // identifiers and nothing else, and the projection is what enforces that.
+  const auditActor = toAuditActor(actor);
 
-  if (rule.audit === AUDIT_ACTION.USER_ROLE_SET) {
+  if (rule.audit === IDENTITY_AUDIT_ACTION.USER_ROLE_SET) {
     const input = parseOrRefuse(setRoleSchema, ctx.body);
 
-    await recordAuthorizationAudit({
-      actorUserId: actor.userId,
-      actorSessionId: actor.sessionId,
-      action: AUDIT_ACTION.USER_ROLE_SET,
-      targetUserId: input.userId,
+    await recordIdentityAudit(userRoleSetAudit, {
+      actor: auditActor,
+      resourceId: input.userId,
+      result: AUDIT_RESULT.SUCCEEDED,
       requestId,
-      metadata: buildRoleSetMetadata(input.role),
+      metadata: { role: input.role },
     });
 
     return;
@@ -206,13 +211,12 @@ async function auditAdminMutation(ctx: AdminGuardContext): Promise<void> {
 
   const input = parseOrRefuse(targetUserSchema, ctx.body);
 
-  await recordAuthorizationAudit({
-    actorUserId: actor.userId,
-    actorSessionId: actor.sessionId,
-    action: AUDIT_ACTION.SESSION_REVOKED,
-    targetUserId: input.userId,
+  await recordIdentityAudit(sessionRevokedAudit, {
+    actor: auditActor,
+    resourceId: input.userId,
+    result: AUDIT_RESULT.SUCCEEDED,
     requestId,
-    metadata: buildSessionRevokedMetadata(),
+    metadata: { scope: IDENTITY_REVOKE_SCOPE },
   });
 }
 

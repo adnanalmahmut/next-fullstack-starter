@@ -8,15 +8,16 @@ import { ValidationError } from "@/shared/errors/application-error";
  * Every list is bounded, every sort field comes from an allowlist, and the only
  * searchable field is fixed. A caller can never name a column, an operator, or an
  * unbounded page size.
+ *
+ * The audit query is not here any more. It belongs to `@/platform/audit`, which
+ * owns the trail, its cursor, and its bounds — and which a business module can
+ * read from without depending on identity administration.
  */
 export const ADMIN_USERS_SORT_FIELDS = ["createdAt", "email", "name"] as const;
 
 export const ADMIN_USERS_MAX_LIMIT = 50;
 export const ADMIN_USERS_DEFAULT_LIMIT = 20;
 export const ADMIN_USERS_MAX_OFFSET = 10_000;
-
-export const ADMIN_AUDIT_MAX_LIMIT = 50;
-export const ADMIN_AUDIT_DEFAULT_LIMIT = 20;
 
 /** The single field a search term is matched against. */
 export const ADMIN_USERS_SEARCH_FIELD = "email" as const;
@@ -42,19 +43,6 @@ const adminUsersQuerySchema = z
   .strict();
 
 export type AdminUsersQuery = z.output<typeof adminUsersQuerySchema>;
-
-const adminAuditQuerySchema = z
-  .object({
-    limit: z.coerce
-      .number()
-      .int()
-      .min(1)
-      .max(ADMIN_AUDIT_MAX_LIMIT)
-      .default(ADMIN_AUDIT_DEFAULT_LIMIT),
-  })
-  .strict();
-
-export type AdminAuditQuery = z.output<typeof adminAuditQuerySchema>;
 
 const userIdSchema = z.string().trim().min(1).max(255);
 
@@ -97,7 +85,6 @@ export type SetRoleBody = z.output<typeof setRoleBodySchema>;
  */
 export const adminInputSchemas = {
   usersQuery: adminUsersQuerySchema,
-  auditQuery: adminAuditQuerySchema,
   userParams: adminUserParamsSchema,
   setRoleBody: setRoleBodySchema,
 } as const;
@@ -120,8 +107,4 @@ function parse<TOutput>(schema: z.ZodType<TOutput>, value: unknown): TOutput {
  */
 export function parseAdminUsersQuery(value: unknown): AdminUsersQuery {
   return parse(adminUsersQuerySchema, value);
-}
-
-export function parseAdminAuditQuery(value: unknown): AdminAuditQuery {
-  return parse(adminAuditQuerySchema, value);
 }

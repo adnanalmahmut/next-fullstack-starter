@@ -463,7 +463,7 @@ describe("authorization", () => {
 
   it("accepts any one of the listed capabilities", async () => {
     signIn();
-    grant("identity.audit.read");
+    grant("audit.record.read");
 
     const action = defineAction({
       name: "identity.overview.read",
@@ -472,7 +472,7 @@ describe("authorization", () => {
         mode: AUTHORIZATION_MODE.ANY_PERMISSION,
         permissions: [
           PERMISSION.IDENTITY_USER_LIST,
-          PERMISSION.IDENTITY_AUDIT_READ,
+          PERMISSION.AUDIT_RECORD_READ,
         ],
       },
       execute: () => "granted",

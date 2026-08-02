@@ -112,6 +112,55 @@ module.exports = {
       },
     },
     {
+      name: "no-audit-platform-internal-imports",
+      comment:
+        "The audit platform is reached through @/platform/audit/index.server, or through its presentation component. The repository stays private, so every write goes through the metadata policy and every read goes through the catalog.",
+      severity: "error",
+      from: {
+        path: "^src/",
+        pathNot: "^src/platform/audit/",
+      },
+      to: {
+        path: "^src/platform/audit/(?!index\\.server\\.ts$|presentation/).+",
+      },
+    },
+    {
+      name: "no-audit-to-authentication",
+      comment:
+        "The audit platform must not depend on authentication. It receives a generic actor, so a business module can audit without inheriting an opinion about how this application signs people in. The dependency runs the other way.",
+      severity: "error",
+      from: {
+        path: "^src/platform/audit/",
+      },
+      to: {
+        path: "^src/platform/auth/",
+      },
+    },
+    {
+      name: "no-audit-to-presentation",
+      comment:
+        "The audit platform must not depend on routing, translations, or business modules. Its own presentation component receives every piece of language as a prop.",
+      severity: "error",
+      from: {
+        path: "^src/platform/audit/",
+      },
+      to: {
+        path: "^src/(?:app|i18n|modules)/",
+      },
+    },
+    {
+      name: "no-audit-to-infrastructure-clients",
+      comment:
+        "An audit record is durable and is written in the caller's transaction. Caching it, queueing it, or coordinating it with a lock would each weaken that, so the audit platform reaches none of those areas.",
+      severity: "error",
+      from: {
+        path: "^src/platform/audit/",
+      },
+      to: {
+        path: "^src/(?:platform/(?:redis|cache|concurrency|jobs)|worker)/",
+      },
+    },
+    {
       name: "no-unresolvable-dependencies",
       comment: "All internal dependencies must resolve successfully.",
       severity: "error",

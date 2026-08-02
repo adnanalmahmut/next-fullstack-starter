@@ -59,11 +59,11 @@ async function removeUsers(userIds: readonly string[]) {
     return;
   }
 
-  await database.authorizationAuditRecord.deleteMany({
+  await database.auditRecord.deleteMany({
     where: {
       OR: [
-        { actorUserId: { in: [...userIds] } },
-        { targetUserId: { in: [...userIds] } },
+        { actorId: { in: [...userIds] } },
+        { resourceId: { in: [...userIds] } },
       ],
     },
   });
@@ -223,9 +223,9 @@ function userPath(userId: string): string {
   return `/api/v1/admin/users/${userId}`;
 }
 
-async function auditFor(targetUserId: string) {
-  return database.authorizationAuditRecord.findMany({
-    where: { targetUserId },
+async function auditFor(resourceId: string) {
+  return database.auditRecord.findMany({
+    where: { resourceId },
     orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
   });
 }
@@ -433,6 +433,106 @@ describe("administrative reads", () => {
     expect(result.status).toBe(200);
     expect(result.body).toMatchObject({ data: { limit: 3 } });
   });
+
+  it("pages the audit trail by cursor and offers no offset", async () => {
+    const admin = await createAdmin("audit-pager");
+    const first = await createUser("audit-pager-first");
+    const second = await createUser("audit-pager-second");
+
+    for (const target of [first, second]) {
+      await call(
+        revokeSessions,
+        `${userPath(target.userId)}/sessions/revoke`,
+        { cookie: admin.cookie, method: "POST" },
+        { userId: target.userId },
+      );
+    }
+
+    const firstPage = await call(listAudit, "/api/v1/admin/audit?limit=1", {
+      cookie: admin.cookie,
+    });
+    const firstBody = firstPage.body as {
+      data: {
+        records: Array<{ id: string }>;
+        limit: number;
+        nextCursor: string | null;
+      };
+    };
+
+    expect(firstPage.status).toBe(200);
+    expect(firstBody.data.records).toHaveLength(1);
+    expect(firstBody.data.nextCursor).not.toBeNull();
+
+    const secondPage = await call(
+      listAudit,
+      `/api/v1/admin/audit?limit=1&cursor=${encodeURIComponent(
+        firstBody.data.nextCursor as string,
+      )}`,
+      { cookie: admin.cookie },
+    );
+    const secondBody = secondPage.body as {
+      data: { records: Array<{ id: string }> };
+    };
+
+    expect(secondPage.status).toBe(200);
+    expect(secondBody.data.records[0]?.id).not.toBe(
+      firstBody.data.records[0]?.id,
+    );
+
+    // An offset is not part of the contract, and an undeclared parameter is
+    // refused rather than ignored.
+    expect(
+      (
+        await call(listAudit, "/api/v1/admin/audit?offset=1", {
+          cookie: admin.cookie,
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await call(listAudit, "/api/v1/admin/audit?cursor=not-a-cursor", {
+          cookie: admin.cookie,
+        })
+      ).status,
+    ).toBe(400);
+  });
+
+  it("returns a generic record and no acting session identifier", async () => {
+    const admin = await createAdmin("audit-shape");
+    const target = await createUser("audit-shape-target");
+
+    await call(
+      revokeSessions,
+      `${userPath(target.userId)}/sessions/revoke`,
+      { cookie: admin.cookie, method: "POST" },
+      { userId: target.userId },
+    );
+
+    const result = await call(listAudit, "/api/v1/admin/audit?limit=50", {
+      cookie: admin.cookie,
+    });
+    const body = result.body as {
+      data: {
+        records: Array<{
+          resource: { id: string; type: string };
+          actor: { id: string; type: string };
+          action: string;
+          result: string;
+        }>;
+      };
+    };
+    const record = body.data.records.find(
+      (entry) => entry.resource.id === target.userId,
+    );
+
+    expect(record).toMatchObject({
+      action: "identity.session.revoked",
+      actor: { type: "user", id: admin.userId },
+      resource: { type: "identity.user", id: target.userId },
+      result: "succeeded",
+    });
+    expect(JSON.stringify(result.body)).not.toContain("actorSessionId");
+  });
 });
 
 describe("invalid input", () => {
@@ -566,9 +666,11 @@ describe("role changes", () => {
 
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({
-      actorUserId: admin.userId,
-      action: "USER_ROLE_SET",
-      targetUserId: target.userId,
+      actorId: admin.userId,
+      action: "identity.user.role-set",
+      resourceType: "identity.user",
+      resourceId: target.userId,
+      result: "SUCCEEDED",
       requestId: REQUEST_ID,
     });
   });
@@ -664,9 +766,11 @@ describe("session revocation", () => {
 
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({
-      actorUserId: admin.userId,
-      action: "SESSION_REVOKED",
-      targetUserId: target.userId,
+      actorId: admin.userId,
+      action: "identity.session.revoked",
+      resourceType: "identity.user",
+      resourceId: target.userId,
+      result: "SUCCEEDED",
     });
   });
 

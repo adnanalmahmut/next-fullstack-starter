@@ -22,7 +22,17 @@ export const APPLICATION_STATEMENTS = {
   "identity.admin": ["access"],
   "identity.user": ["list", "read", "set-role"],
   "identity.session": ["revoke"],
-  "identity.audit": ["read"],
+  /**
+   * Reading the audit trail is owned by the audit platform, not by identity.
+   *
+   * It was `identity.audit.read` while the trail only held identity changes.
+   * Now that any module can write to it, a permission scoped to identity would
+   * grant a reader access to records that have nothing to do with identity, and
+   * the name would say the opposite of what it does. There is deliberately no
+   * alias for the old name: a permission that still resolves is a permission
+   * still granted, and a rename that leaves one behind has renamed nothing.
+   */
+  "audit.record": ["read"],
 } as const;
 
 export type PermissionResource = keyof typeof APPLICATION_STATEMENTS;
@@ -48,7 +58,7 @@ export const PERMISSION = {
   IDENTITY_USER_READ: "identity.user.read",
   IDENTITY_USER_SET_ROLE: "identity.user.set-role",
   IDENTITY_SESSION_REVOKE: "identity.session.revoke",
-  IDENTITY_AUDIT_READ: "identity.audit.read",
+  AUDIT_RECORD_READ: "audit.record.read",
 } as const satisfies Readonly<Record<string, Permission>>;
 
 export type PermissionDefinition = Readonly<{
@@ -82,8 +92,8 @@ const PERMISSION_DEFINITIONS = {
     resource: "identity.session",
     action: "revoke",
   },
-  [PERMISSION.IDENTITY_AUDIT_READ]: {
-    resource: "identity.audit",
+  [PERMISSION.AUDIT_RECORD_READ]: {
+    resource: "audit.record",
     action: "read",
   },
 } as const satisfies Readonly<Record<Permission, PermissionDefinition>>;

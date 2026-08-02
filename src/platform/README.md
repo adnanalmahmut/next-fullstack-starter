@@ -167,6 +167,28 @@ Implementation rules are documented in [`jobs/README.md`](./jobs/README.md) and
 the architectural policy, including the removal procedure, in
 [`docs/architecture/background-jobs-and-outbox.md`](../../docs/architecture/background-jobs-and-outbox.md).
 
+## Application audit
+
+A generic, append-only trail lives under `src/platform/audit`.
+
+- `defineAuditAction` declares an action; the platform holds none of its own, so
+  an action belongs to whoever performs it.
+- `appendAuditRecord(tx, ...)` writes the record inside the caller's transaction,
+  so a change and its record share a commit.
+- `recordAuditPostCommit(...)` is the weaker writer, for a change some other
+  system already committed. It answers `false` rather than throwing.
+- `listAuditRecords(catalog, query)` reads it back, newest first, bounded and
+  paged by cursor.
+- `presentation/` renders it, knowing no vocabulary of its own.
+
+The direction is the point: `platform/auth` depends on `platform/audit`, never
+the reverse, so a business module can audit without depending on how this
+application authenticates.
+
+Implementation rules are documented in [`audit/README.md`](./audit/README.md) and
+the architectural policy in
+[`docs/architecture/application-audit-platform.md`](../../docs/architecture/application-audit-platform.md).
+
 ## Observability
 
 Structured logging and request correlation are implemented under
@@ -232,7 +254,8 @@ Capability-based authorization is implemented under
 - `policies/` hold the pure resource-level decisions.
 - `admin-guard.server.ts` applies the capability, the policies, and the audit
   record to the Better Auth Admin endpoints, including a direct call.
-- `audit/` owns the append-only authorization audit trail.
+- `audit/` declares the two identity audit actions and records them through the
+  audit platform; it owns no storage.
 
 An authorization decision is never made by comparing a role name; an ESLint rule
 refuses that. The proxy plays no part in the decision.

@@ -1,0 +1,84 @@
+/// The application audit trail.
+///
+/// Owned by `src/platform/audit`. It is generic: nothing in this file names an
+/// action, a module, or a business concept. An action is a string constrained by
+/// a pattern rather than a database enum, which is what lets a module add an
+/// audited action without a migration — the closed set that matters is the
+/// application's action catalog, and a database enum would only mean the same
+/// set had to be declared twice.
+///
+/// The table is append-only from the application's perspective: the repository
+/// exposes an append and a bounded read, and no update, delete, or upsert. That
+/// is an application-level guarantee, not a database one. There is deliberately
+/// no trigger forbidding `UPDATE` or `DELETE`, because a trigger would also stop
+/// the operator who legitimately has to correct or erase a row — a data-subject
+/// erasure, a retention policy applied by hand — and would be trivially
+/// bypassable by the same superuser anyway. Those operations belong to a DBA
+/// with separate credentials and a separate audit trail of their own.
+///
+/// It intentionally has no foreign key to `user`, to `session`, or to any
+/// business model. An audit record must outlive the thing it refers to: the
+/// record of a user being deleted is worthless if deleting the user removes it.
+/// `actorId` and `resourceId` are therefore plain identifiers, not references.
+///
+/// Stored values are minimized. `metadata` only ever holds a value that passed
+/// the action's own closed schema and the platform's forbidden-key and size
+/// policy. Credentials, tokens, cookies, headers, email addresses, display
+/// names, IP addresses, user agents, raw request bodies, and raw provider errors
+/// are never written here.
+enum AuditActorType {
+  USER   @map("user")
+  SYSTEM @map("system")
+
+  @@map("audit_actor_type")
+}
+
+/// How an audited attempt ended. Closed, and matched one for one by
+/// `src/platform/audit/audit-result.ts`.
+enum AuditResult {
+  SUCCEEDED @map("succeeded")
+  FAILED    @map("failed")
+  DENIED    @map("denied")
+
+  @@map("audit_result")
+}
+
+model AuditRecord {
+  id         String   @id @default(uuid(7))
+  occurredAt DateTime @default(now())
+
+  actorType AuditActorType
+  actorId   String         @db.VarChar(255)
+
+  /// Stored for investigation, and selected by nothing.
+  ///
+  /// No reader, DTO, API response, or rendered page includes it. Present only
+  /// for a user actor; a database constraint holds both halves of that rule.
+  actorSessionId String? @db.VarChar(255)
+
+  /// `<owner>.<resource>.<action>`, constrained by a pattern rather than an enum.
+  action String @db.VarChar(96)
+
+  /// `<owner>.<resource>`. It is not derived from `action`: an action may act on
+  /// a resource other than the one its own name is grouped under, which is why
+  /// `identity.session.revoked` records `identity.user`.
+  resourceType String @db.VarChar(64)
+  resourceId   String @db.VarChar(255)
+
+  result AuditResult
+
+  /// The identifier of the request that caused the change, when there was one.
+  requestId String? @db.VarChar(36)
+
+  metadata Json?
+
+  /// The newest-first listing, and the keyset page that continues it.
+  @@index([occurredAt, id])
+  /// "What did this actor do", ordered by time.
+  @@index([actorType, actorId, occurredAt])
+  /// "What happened to this resource", ordered by time.
+  @@index([resourceType, resourceId, occurredAt])
+  /// "Every occurrence of this action", ordered by time.
+  @@index([action, occurredAt])
+  @@map("audit_record")
+}

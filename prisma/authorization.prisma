@@ -1,7 +1,17 @@
-/// Technical authorization audit trail.
+/// Legacy authorization audit trail. Frozen.
 ///
-/// Owned by `src/platform/auth/authorization`. It records the administrative
-/// mutations the application supports, and nothing else.
+/// Superseded by `audit_record` in `audit.prisma`. Every row it held was copied
+/// there once, by the migration that created that table, and nothing writes here
+/// any more: no production code path reads or writes
+/// `database.authorizationAuditRecord`, and a contract test holds that.
+///
+/// It is kept rather than dropped because dropping it would destroy the original
+/// of a record whose copy is the only other evidence it existed. The table and
+/// its enum stay as they are — unchanged structure, unchanged data, no new rows
+/// — and the admin reader shows the copies.
+///
+/// Owned by `src/platform/auth/authorization` when it was live. It recorded the
+/// administrative mutations the application supports, and nothing else.
 ///
 /// The table is append-only from the application's perspective: the repository
 /// exposes an append and a read, and no update or delete. It intentionally has no

@@ -262,9 +262,10 @@ describe("admin plugin foundation", () => {
   it("keeps the plugin statements and invents no business resource", () => {
     const resources = Object.keys(accessControl.statements).sort();
 
-    // The plugin's own resources stay untouched, and every added resource is an
-    // application capability in the `identity` module. A business resource such
-    // as a catalog or an order belongs to the module that owns it.
+    // The plugin's own resources stay untouched, and every added resource is a
+    // platform capability: identity for the administrative operations, and the
+    // audit trail for reading them back. A business resource such as a catalog
+    // or an order belongs to the module that owns it.
     expect(resources).toContain("user");
     expect(resources).toContain("session");
     expect(
@@ -272,8 +273,8 @@ describe("admin plugin foundation", () => {
         (resource) => resource !== "user" && resource !== "session",
       ),
     ).toEqual([
+      "audit.record",
       "identity.admin",
-      "identity.audit",
       "identity.session",
       "identity.user",
     ]);
