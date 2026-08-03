@@ -23,6 +23,19 @@ export type LogContext = Readonly<{
   durationMs?: number;
   status?: LogStatus;
   errorCode?: ErrorCode;
+  /**
+   * Trace correlation, derived from the active span and from nothing else.
+   *
+   * The three fields are optional and are absent whenever no OpenTelemetry SDK is
+   * registered, which is the default. They are never accepted from a client, a
+   * header, or a payload: a caller must not be able to choose the trace its log
+   * line claims to belong to. The assembled `traceparent`, `tracestate`, and
+   * baggage are all deliberately absent — a log line carries identifiers, not a
+   * propagation wire format.
+   */
+  traceId?: string;
+  spanId?: string;
+  traceFlags?: string;
 }>;
 
 export type RequestContext = Readonly<

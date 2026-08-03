@@ -19,14 +19,24 @@ import { loadWorkerEnvironment, WORKER_EXIT_CODE } from "./bootstrap";
  *
  *  1. load `.env*` and align `NODE_ENV` (before any application import);
  *  2. refuse to start unless `JOBS_ENABLED` is true;
- *  3. build the worker configuration, which is where a missing `JOBS_REDIS_URL`
+ *  3. start telemetry and error monitoring for the `worker` process type, both
+ *     optional and both no-ops when switched off;
+ *  4. build the worker configuration, which is where a missing `JOBS_REDIS_URL`
  *     is caught;
- *  4. open the BullMQ connections and start the consumer;
- *  5. start the outbox dispatcher;
- *  6. report readiness;
- *  7. wait for `SIGINT` or `SIGTERM`;
- *  8. stop polling, drain within the shutdown budget, close the worker, the
- *     queue, the connections, and Prisma.
+ *  5. open the BullMQ connections and start the consumer;
+ *  6. start the outbox dispatcher and arm the backlog gauges;
+ *  7. report readiness;
+ *  8. wait for `SIGINT` or `SIGTERM`;
+ *  9. stop polling, drain within the shutdown budget, close the worker, the
+ *     queue, and the connections;
+ * 10. flush telemetry and error reports within their budgets, shut both down,
+ *     and disconnect Prisma.
+ *
+ * Telemetry is started here rather than inside the platform for the same reason
+ * the signal handlers are: a worker is a process, and deciding what a process
+ * exports and when it flushes is a process concern. It is also why an exporter
+ * that cannot reach its collector at shutdown does not change the exit code — the
+ * jobs either ran or they did not, and a lost span does not change which.
  */
 const SHUTDOWN_SIGNALS = ["SIGINT", "SIGTERM"] as const;
 
@@ -54,6 +64,16 @@ async function main(): Promise<void> {
 
     return;
   }
+
+  // Before the first job is consumed, so the first execution is traced rather
+  // than dropped into a provider that does not exist yet. Neither call throws:
+  // both contain their own failures and answer with a stable status.
+  await observability.startProductionTelemetry({
+    processType: observability.TELEMETRY_PROCESS_TYPE.WORKER,
+  });
+  await observability.startErrorMonitor({
+    processType: observability.TELEMETRY_PROCESS_TYPE.WORKER,
+  });
 
   const runtime = await jobs.startJobsWorkerRuntime({
     registry: jobs.JOB_REGISTRY,
@@ -96,6 +116,18 @@ async function main(): Promise<void> {
   });
 
   await finished;
+
+  // After the worker has stopped and before the database goes: a job's last span
+  // and the attempt counters it produced are still buffered, and this is the only
+  // moment they can still leave. Every call below is bounded by its own timeout and
+  // swallows its failures, so a collector that has gone away cannot hold the
+  // process open or change an exit code that has already been decided.
+  await observability.forceFlushProductionTelemetry();
+  await observability.flushErrorMonitor(
+    observability.TELEMETRY_SHUTDOWN_TIMEOUT_MS,
+  );
+  await observability.shutdownErrorMonitor();
+  await observability.shutdownProductionTelemetry();
 
   await databaseModule.database.$disconnect();
 }

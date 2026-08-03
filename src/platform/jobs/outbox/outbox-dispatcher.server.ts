@@ -3,6 +3,22 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import { database } from "@/platform/database/index.server";
+import {
+  DATABASE_OPERATION,
+  withDatabaseOperationSpan,
+} from "@/platform/observability/database-span.server";
+import { ERROR_BOUNDARY } from "@/platform/observability/error-monitoring/error-monitor";
+import { captureUnexpectedError } from "@/platform/observability/error-monitoring/error-monitor.server";
+import {
+  recordOutboxDeadLettered,
+  recordOutboxPublish,
+  recordOutboxPublishRetry,
+} from "@/platform/observability/metrics.server";
+import { sanitizeTraceContext } from "@/platform/observability/trace-context";
+import {
+  currentTraceContext,
+  runWithRemoteTraceContext,
+} from "@/platform/observability/tracing.server";
 
 import {
   getJobsConfiguration,
@@ -14,10 +30,9 @@ import {
   PAYLOAD_REJECTION,
 } from "../definitions/job-envelope";
 import type { JobRegistry } from "../definitions/job-registry";
-import { JOB_OUTCOME } from "../observability/job-log-fields";
+import { JOB_OUTCOME, type JobOutcome } from "../observability/job-log-fields";
 import { JOB_LOG_LEVEL, logJobEvent } from "../observability/job-logger.server";
 import { JOBS_LOG_EVENT } from "../observability/log-event";
-import { sanitizeTraceContext } from "../observability/trace-context";
 import { JOB_SPAN, withJobSpan } from "../observability/tracing";
 import { jobOptionsFor, requireJobQueue } from "../queue/job-queue.server";
 
@@ -100,6 +115,36 @@ function errorName(error: unknown): string {
   return error instanceof Error ? error.constructor.name : "UnknownError";
 }
 
+/**
+ * The job identity a row contributes to a metric, or a placeholder.
+ *
+ * `job.name` and `job.version` are acceptable metric dimensions because the job
+ * registry is closed and small — the number of time series is a property of the
+ * code. A row written by a newer release, or by one whose definition has since
+ * been removed, carries a name that is *not* in that registry, and using it would
+ * let the dimension grow without bound. So an unresolvable row is counted under one
+ * shared identity, which is also the only honest label for it.
+ */
+const UNRESOLVED_JOB_NAME = "unresolved";
+const UNRESOLVED_JOB_VERSION = 0;
+
+function metricIdentity(
+  row: ClaimedRow,
+  registry: JobRegistry,
+): Readonly<{ jobName: string; jobVersion: number }> {
+  return registry.resolve(row.jobName, row.jobVersion)
+    ? { jobName: row.jobName, jobVersion: row.jobVersion }
+    : { jobName: UNRESOLVED_JOB_NAME, jobVersion: UNRESOLVED_JOB_VERSION };
+}
+
+const PUBLISH_METRIC_OUTCOME = {
+  published: JOB_OUTCOME.SUCCEEDED,
+  failed: JOB_OUTCOME.RETRYING,
+  "dead-lettered": JOB_OUTCOME.DEAD_LETTERED,
+} as const satisfies Readonly<Record<PublishOutcome, JobOutcome>>;
+
+type PublishOutcome = "published" | "failed" | "dead-lettered";
+
 export type OutboxDispatcherOptions = Readonly<{
   registry: JobRegistry;
   /** Overridden only by tests that need two dispatchers with stable identities. */
@@ -144,9 +189,10 @@ export function createOutboxDispatcher(
     // are due and skips the ones another dispatcher is holding; the outer
     // update stamps the lease and increments the attempt counter so a row that
     // keeps failing eventually reaches its dead-letter rather than looping.
-    return database.$transaction(
-      async (tx) =>
-        tx.$queryRaw<ClaimedRow[]>`
+    return withDatabaseOperationSpan(DATABASE_OPERATION.OUTBOX_CLAIM, () =>
+      database.$transaction(
+        async (tx) =>
+          tx.$queryRaw<ClaimedRow[]>`
           UPDATE "outbox_message" AS m
              SET "lockedBy" = ${dispatcherId},
                  "lockedUntil" = ${lockedUntil},
@@ -174,6 +220,7 @@ export function createOutboxDispatcher(
                  m."occurredAt",
                  m."publishAttempts"
         `,
+      ),
     );
   }
 
@@ -182,16 +229,18 @@ export function createOutboxDispatcher(
     reason: OutboxDeadLetterReason,
     errorCode?: OutboxErrorCode,
   ): Promise<void> {
-    await database.outboxMessage.updateMany({
-      where: { id: row.id, deadLetteredAt: null },
-      data: {
-        deadLetteredAt: new Date(),
-        deadLetterCode: reason,
-        lockedBy: null,
-        lockedUntil: null,
-        ...(errorCode === undefined ? {} : { lastErrorCode: errorCode }),
-      },
-    });
+    await withDatabaseOperationSpan(DATABASE_OPERATION.OUTBOX_DEAD_LETTER, () =>
+      database.outboxMessage.updateMany({
+        where: { id: row.id, deadLetteredAt: null },
+        data: {
+          deadLetteredAt: new Date(),
+          deadLetterCode: reason,
+          lockedBy: null,
+          lockedUntil: null,
+          ...(errorCode === undefined ? {} : { lastErrorCode: errorCode }),
+        },
+      }),
+    );
 
     logJobEvent(JOB_LOG_LEVEL.ERROR, JOBS_LOG_EVENT.OUTBOX_DEAD_LETTERED, {
       jobName: row.jobName,
@@ -226,15 +275,17 @@ export function createOutboxDispatcher(
       row.id,
     );
 
-    await database.outboxMessage.updateMany({
-      where: { id: row.id, publishedAt: null, deadLetteredAt: null },
-      data: {
-        lockedBy: null,
-        lockedUntil: null,
-        availableAt: new Date(Date.now() + delayMs),
-        lastErrorCode: errorCode,
-      },
-    });
+    await withDatabaseOperationSpan(DATABASE_OPERATION.OUTBOX_RESCHEDULE, () =>
+      database.outboxMessage.updateMany({
+        where: { id: row.id, publishedAt: null, deadLetteredAt: null },
+        data: {
+          lockedBy: null,
+          lockedUntil: null,
+          availableAt: new Date(Date.now() + delayMs),
+          lastErrorCode: errorCode,
+        },
+      }),
+    );
 
     logJobEvent(JOB_LOG_LEVEL.WARN, JOBS_LOG_EVENT.OUTBOX_PUBLISH_FAILED, {
       jobName: row.jobName,
@@ -255,7 +306,7 @@ export function createOutboxDispatcher(
     row: ClaimedRow,
     maxPublishAttempts: number,
     backoffBaseMs: number,
-  ): Promise<"published" | "failed" | "dead-lettered"> {
+  ): Promise<PublishOutcome> {
     const runtime = registry.resolve(row.jobName, row.jobVersion);
 
     if (!runtime) {
@@ -292,21 +343,13 @@ export function createOutboxDispatcher(
       return "dead-lettered";
     }
 
-    const traceContext = sanitizeTraceContext({
+    // The context the *request* recorded, read back from the row. It is the
+    // parent of everything below, which is what makes a request and the job it
+    // caused one trace rather than two.
+    const storedTraceContext = sanitizeTraceContext({
       traceparent: row.traceparent ?? undefined,
       tracestate: row.tracestate ?? undefined,
     });
-
-    const envelope: JobEnvelope<unknown> = {
-      jobName: row.jobName,
-      version: row.jobVersion,
-      payload: parsed.payload,
-      outboxId: row.id,
-      correlationId: row.correlationId,
-      ...(row.causationId === null ? {} : { causationId: row.causationId }),
-      occurredAt: row.occurredAt.toISOString(),
-      ...(traceContext === undefined ? {} : { traceContext }),
-    };
 
     // Building the queue and using it fail for different reasons and are
     // recorded as different codes: the first is a misconfiguration an operator
@@ -327,24 +370,55 @@ export function createOutboxDispatcher(
     }
 
     try {
-      await withJobSpan(
-        JOB_SPAN.OUTBOX_PUBLISH,
-        {
-          jobName: row.jobName,
-          jobVersion: row.jobVersion,
-          outboxId: row.id,
-          attempt: row.publishAttempts,
-        },
-        // The BullMQ job id *is* the outbox row id. That is what makes a
-        // republish after a crash idempotent for as long as the completed job
-        // is retained.
-        async () => {
-          await queue.add(
-            runtime.identity,
-            envelope,
-            jobOptionsFor(row.id, runtime.attempts, runtime.backoff),
-          );
-        },
+      // The stored context is restored first, so the publish span is a child of
+      // the request that wrote the row — minutes or hours earlier, in another
+      // process. Malformed context is dropped and the publish span becomes a
+      // root: a mangled header must never stop a message being published.
+      await runWithRemoteTraceContext(storedTraceContext, () =>
+        withJobSpan(
+          JOB_SPAN.OUTBOX_PUBLISH,
+          {
+            jobName: row.jobName,
+            jobVersion: row.jobVersion,
+            outboxId: row.id,
+            attempt: row.publishAttempts,
+          },
+          // The BullMQ job id *is* the outbox row id. That is what makes a
+          // republish after a crash idempotent for as long as the completed job
+          // is retained.
+          async () => {
+            // Built inside the span, and this is the whole reason the envelope is
+            // not assembled earlier: the context injected here is the *publish
+            // span's*, so the worker's execute span becomes its child rather than
+            // a second child of the original request. The chain is therefore
+            // request → publish → execute, in one trace, with real parentage at
+            // each hop.
+            const publishTraceContext = currentTraceContext();
+
+            const envelope: JobEnvelope<unknown> = {
+              jobName: row.jobName,
+              version: row.jobVersion,
+              payload: parsed.payload,
+              outboxId: row.id,
+              correlationId: row.correlationId,
+              ...(row.causationId === null
+                ? {}
+                : { causationId: row.causationId }),
+              occurredAt: row.occurredAt.toISOString(),
+              // Absent with no SDK registered, which is a correct envelope and
+              // not a degraded one.
+              ...(publishTraceContext === undefined
+                ? {}
+                : { traceContext: publishTraceContext }),
+            };
+
+            await queue.add(
+              runtime.identity,
+              envelope,
+              jobOptionsFor(row.id, runtime.attempts, runtime.backoff),
+            );
+          },
+        ),
       );
     } catch {
       const exhausted = await reschedule(
@@ -357,15 +431,19 @@ export function createOutboxDispatcher(
       return exhausted ? "dead-lettered" : "failed";
     }
 
-    const marked = await database.outboxMessage.updateMany({
-      where: { id: row.id, publishedAt: null },
-      data: {
-        publishedAt: new Date(),
-        lockedBy: null,
-        lockedUntil: null,
-        lastErrorCode: null,
-      },
-    });
+    const marked = await withDatabaseOperationSpan(
+      DATABASE_OPERATION.OUTBOX_MARK_PUBLISHED,
+      () =>
+        database.outboxMessage.updateMany({
+          where: { id: row.id, publishedAt: null },
+          data: {
+            publishedAt: new Date(),
+            lockedBy: null,
+            lockedUntil: null,
+            lastErrorCode: null,
+          },
+        }),
+    );
 
     if (marked.count === 0) {
       // Another dispatcher published this row while this one held a stale
@@ -433,12 +511,25 @@ export function createOutboxDispatcher(
         outbox.backoffBaseMs,
       );
 
+      // Recorded here and nowhere else. `publish` has four early returns and two
+      // failure paths, and counting inside it would mean six call sites and an
+      // eventual double count; one place per row is one place per attempt by
+      // construction.
+      const identity = metricIdentity(row, registry);
+
+      recordOutboxPublish({
+        ...identity,
+        outcome: PUBLISH_METRIC_OUTCOME[outcome],
+      });
+
       if (outcome === "published") {
         published += 1;
       } else if (outcome === "dead-lettered") {
         deadLettered += 1;
+        recordOutboxDeadLettered(identity);
       } else {
         failed += 1;
+        recordOutboxPublishRetry(identity);
       }
     }
 
@@ -468,6 +559,13 @@ export function createOutboxDispatcher(
             JOBS_LOG_EVENT.OUTBOX_PUBLISH_FAILED,
             { outcome: JOB_OUTCOME.FAILED, errorCode: errorName(error) },
           );
+
+          // The one failure this boundary owns: something that threatens the
+          // dispatcher loop itself rather than one message. A per-row publish
+          // failure is *not* reported here — it is expected traffic during a Redis
+          // blip, it is already rescheduled with backoff, and reporting it would
+          // send one event per retry per row.
+          captureUnexpectedError(error, { boundary: ERROR_BOUNDARY.OUTBOX });
         }
 
         if (!running) {

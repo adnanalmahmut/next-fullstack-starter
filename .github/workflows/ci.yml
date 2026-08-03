@@ -76,6 +76,21 @@ jobs:
       # `Verify project` rather than pass unnoticed on a runner that happens to
       # have one.
       STORAGE_ENABLED: "false"
+      # Production telemetry is off for the whole job. `TELEMETRY_OTLP_ENDPOINT`
+      # and `TELEMETRY_OTLP_HEADERS` are deliberately absent from this block, so
+      # `Verify project`, the production build, and the end-to-end run all prove
+      # what they are supposed to prove: that the application builds, boots, and
+      # serves with no collector anywhere, having loaded no OpenTelemetry SDK and
+      # opened no socket. Only the telemetry integration step below overrides it,
+      # and it points at a receiver it starts inside the test process.
+      TELEMETRY_ENABLED: "false"
+      # Error monitoring is a separate switch from telemetry, and it is off for
+      # every step without exception — there is no step that enables it. A DSN is a
+      # credential belonging to a vendor account, and this repository's tests must
+      # never need one: the Sentry adapter is exercised against an unreachable
+      # loopback DSN in the unit suite, which proves the lifecycle without sending
+      # anything anywhere.
+      ERROR_MONITORING_ENABLED: "false"
 
     steps:
       - name: Checkout repository
@@ -115,6 +130,23 @@ jobs:
 
       - name: Run end-to-end tests
         run: pnpm test:e2e
+
+      # The only step with telemetry enabled, and it needs no service at all: the
+      # suite starts an ephemeral OTLP receiver on a loopback port inside the test
+      # process and closes it in `finally`. That is deliberately not an
+      # OpenTelemetry Collector container — a collector would be one more thing to
+      # provision and wait for, and it could be left running after a failure, while
+      # an in-process receiver leaves no port listening and can assert on the exact
+      # bytes the exporter put on the wire.
+      #
+      # No secret is added and no DSN is set. `TELEMETRY_OTLP_ENDPOINT` is not set
+      # here either: the receiver binds to an ephemeral port and the suite
+      # configures the endpoint from the port it was given, so two runs on one
+      # machine cannot collide.
+      - name: Run telemetry integration tests
+        env:
+          TELEMETRY_ENABLED: "true"
+        run: pnpm test:telemetry:integration
 
       # The only step that sees a Redis server. It covers the foundation and the
       # cache and concurrency controls built on it; the application itself is

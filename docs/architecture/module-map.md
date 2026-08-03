@@ -112,10 +112,12 @@ module, or transport. Post-success audit and cache invalidation are not
 transactional with the use case. The detailed policy is defined in
 [`server-action-factory.md`](./server-action-factory.md).
 
-### Observability
+### Observability and production telemetry
 
 ```text
 src/platform/observability/index.server.ts
+src/platform/observability/telemetry
+src/platform/observability/error-monitoring
 src/instrumentation.ts
 src/proxy.ts
 ```
@@ -127,11 +129,25 @@ Responsibilities:
 - Isolate request context with `AsyncLocalStorage`.
 - Emit Pino JSON with stable fields, event names, and redaction.
 - Delegate safe Next.js request-error reporting without exposing raw errors.
+- Own the four independent contracts: logging, tracing, metrics, and server-side
+  error monitoring. The last three are optional and off by default.
+- Own the OpenTelemetry SDK lifecycle for the `web` and `worker` process types,
+  and be the only area that imports an SDK or a vendor client.
+- Own the closed span, metric, and attribute vocabularies, so no call site can
+  invent a name or a dimension.
+- Carry the W3C trace-context contract that the outbox and the queue envelope
+  store, and restore a remote parent across the process boundary.
 
-The proxy integration remains limited to paths covered by its matcher. Future
-Action, Route Handler, webhook, cron, and job boundaries must initialize or
-propagate their own context. The detailed policy is defined in
-[`observability.md`](./observability.md).
+With `TELEMETRY_ENABLED=false` and `ERROR_MONITORING_ENABLED=false` — the defaults
+— no SDK module is evaluated, no provider is registered, no exporter exists, and no
+socket is opened. Every span and every metric is a no-op through
+`@opentelemetry/api`, so a call site never branches on whether telemetry is on.
+
+The proxy integration remains limited to paths covered by its matcher. The detailed
+policy, the span and metric catalogs, the attribute allowlists, and the removal
+procedure are defined in [`observability.md`](./observability.md); the
+error-monitoring decision is recorded in
+[ADR 2](../adr/0002-server-error-monitoring.md).
 
 ### Proxy request pipeline
 
@@ -485,7 +501,8 @@ pnpm verify
 
 - [Layer and Module Boundaries](./layer-boundaries.md)
 - [Error Handling Contracts](./error-handling.md)
-- [Observability Foundation](./observability.md)
+- [Observability and Production Telemetry](./observability.md)
+- [Server-side error monitoring (ADR 2)](../adr/0002-server-error-monitoring.md)
 - [Proxy Request Pipeline](./proxy-request-pipeline.md)
 - [Authentication Foundation](./authentication-foundation.md)
 - [Server Action Factory](./server-action-factory.md)

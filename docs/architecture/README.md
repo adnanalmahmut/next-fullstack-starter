@@ -7,7 +7,7 @@ System-level architectural documentation lives here.
 - [Layer and Module Boundaries](./layer-boundaries.md)
 - [Module Map](./module-map.md)
 - [Error Handling Contracts](./error-handling.md)
-- [Observability Foundation](./observability.md)
+- [Observability and Production Telemetry](./observability.md)
 - [Proxy Request Pipeline](./proxy-request-pipeline.md)
 - [Authentication Foundation](./authentication-foundation.md)
 - [Authorization and Admin Access Control](./authorization-admin-access-control.md)
@@ -22,6 +22,7 @@ System-level architectural documentation lives here.
 - [Design System](../design-system/README.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)
+- [Architecture Decision Records](../adr/README.md)
 
 ## Scope
 
@@ -74,6 +75,13 @@ Current documentation covers:
   an immutable staging-to-final promotion, private short-lived downloads, a
   content-inspection extension point, a bounded unscheduled cleanup contract,
   and a removal procedure that touches no business code.
+- Optional production telemetry: distributed tracing and metrics over OTLP/HTTP,
+  a manually assembled OpenTelemetry SDK loaded only when enabled, parent-based
+  trace-id ratio sampling, four resource attributes and no host or process
+  detection, closed span and metric vocabularies with attribute allowlists, one
+  trace across a request, its outbox row, and the job it produced, log and trace
+  correlation, and a provider-neutral server-side error-monitoring port with a
+  Sentry adapter that has no tracing of its own.
 - Process-aware operational health: a dependency-free liveness probe, a readiness
   probe over PostgreSQL and whichever optional dependencies are enabled, a worker
   readiness command with distinct exit codes for "down" and "misconfigured", a

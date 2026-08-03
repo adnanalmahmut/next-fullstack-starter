@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { isValidOtlpHeaders, MAX_OTLP_HEADERS_LENGTH } from "./otlp-headers";
+
 export const appEnvironmentSchema = z.enum([
   "development",
   "test",
@@ -508,9 +510,243 @@ export const storageEnvironmentSchema = z
     }
   });
 
+/**
+ * Production telemetry configuration.
+ *
+ * Telemetry is optional in exactly the way Redis, jobs, and storage are, and the
+ * bar is higher rather than lower: with `TELEMETRY_ENABLED=false` the
+ * application must build, boot, and pass its whole suite while importing no
+ * OpenTelemetry SDK, creating no provider, opening no socket, and resolving no
+ * hostname. This block is therefore declared apart from
+ * `serverEnvironmentSchema` and read lazily, and it shares no helper with the
+ * three optional areas above so each stays deletable on its own.
+ *
+ * `TELEMETRY_OTLP_ENDPOINT` becomes required only once `TELEMETRY_ENABLED` is
+ * true. There is no default endpoint — not `localhost:4318`, not the exporter's
+ * own fallback — because an enabled telemetry with nowhere to export to is a
+ * configuration mistake, and a silent fallback to a loopback address is the one
+ * that survives into production unnoticed.
+ *
+ * Nothing in this block is ever logged. The endpoint is infrastructure detail,
+ * and the headers are a credential.
+ */
+export const telemetryOtlpEndpointSchema = z
+  .url({
+    // `http` is accepted because a collector on the same host or inside the same
+    // network namespace has no certificate. A collector reached across a network
+    // is expected to be `https`, and the endpoint is never logged either way.
+    protocol: /^https?$/,
+  })
+  .max(2_048)
+  .refine(
+    (value) => {
+      try {
+        const url = new URL(value);
+
+        // A credential inside the URL would travel through every place a URL is
+        // allowed to appear — an exporter error, a stack frame, a crash dump —
+        // and none of those apply the redaction a header does. Authentication
+        // belongs in `TELEMETRY_OTLP_HEADERS`.
+        return url.username.length === 0 && url.password.length === 0;
+      } catch {
+        return false;
+      }
+    },
+    {
+      message:
+        "TELEMETRY_OTLP_ENDPOINT must not embed a username or a password; use TELEMETRY_OTLP_HEADERS.",
+    },
+  );
+
+export const telemetryOtlpHeadersSchema = z
+  .string()
+  .max(MAX_OTLP_HEADERS_LENGTH)
+  .refine(isValidOtlpHeaders, {
+    // The message names the shape and never the value: this variable is a
+    // credential, and a validation error is printed at startup.
+    message:
+      "TELEMETRY_OTLP_HEADERS must be a bounded comma-separated list of name=value pairs.",
+  });
+
+export const MIN_TELEMETRY_TRACE_SAMPLE_RATIO = 0;
+export const MAX_TELEMETRY_TRACE_SAMPLE_RATIO = 1;
+
+/**
+ * The sampling defaults, by environment.
+ *
+ * Outside production every trace is kept: a developer looking for one request
+ * cannot be told it was sampled away. In production the default is a tenth,
+ * because a trace per request is a cost decision nobody made — and the ratio is
+ * applied to the trace id, so a sampled trace is sampled end to end rather than
+ * in fragments.
+ */
+export const DEFAULT_TELEMETRY_TRACE_SAMPLE_RATIO = 1;
+export const DEFAULT_PRODUCTION_TELEMETRY_TRACE_SAMPLE_RATIO = 0.1;
+
+export const DEFAULT_TELEMETRY_METRIC_EXPORT_INTERVAL_MS = 60_000;
+export const MIN_TELEMETRY_METRIC_EXPORT_INTERVAL_MS = 1_000;
+export const MAX_TELEMETRY_METRIC_EXPORT_INTERVAL_MS = 300_000;
+
+export const DEFAULT_TELEMETRY_EXPORT_TIMEOUT_MS = 10_000;
+export const MIN_TELEMETRY_EXPORT_TIMEOUT_MS = 500;
+export const MAX_TELEMETRY_EXPORT_TIMEOUT_MS = 60_000;
+
+export const MAX_APP_RELEASE_LENGTH = 64;
+
+/**
+ * The release identifier, when a deployment has one.
+ *
+ * Bounded and shaped, because it becomes a resource attribute on every span and
+ * a tag on every captured error. It is never derived by running `git` at
+ * runtime: a production process must not shell out, and a container has no
+ * repository to ask.
+ */
+export const appReleaseSchema = z
+  .string()
+  .min(1)
+  .max(MAX_APP_RELEASE_LENGTH)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._+-]*$/);
+
+const telemetryFlagSchema = z
+  .enum(["true", "false"])
+  .transform((value) => value === "true");
+
+const boundedTelemetryInteger = (
+  minimum: number,
+  maximum: number,
+  fallback: number,
+) => z.coerce.number().int().min(minimum).max(maximum).default(fallback);
+
+export const telemetryEnvironmentSchema = z
+  .object({
+    TELEMETRY_ENABLED: telemetryFlagSchema.default(false),
+
+    TELEMETRY_OTLP_ENDPOINT: telemetryOtlpEndpointSchema.optional(),
+    TELEMETRY_OTLP_HEADERS: telemetryOtlpHeadersSchema.optional(),
+
+    TELEMETRY_TRACE_SAMPLE_RATIO: z.coerce
+      .number()
+      .min(MIN_TELEMETRY_TRACE_SAMPLE_RATIO)
+      .max(MAX_TELEMETRY_TRACE_SAMPLE_RATIO)
+      .optional(),
+
+    TELEMETRY_METRIC_EXPORT_INTERVAL_MS: boundedTelemetryInteger(
+      MIN_TELEMETRY_METRIC_EXPORT_INTERVAL_MS,
+      MAX_TELEMETRY_METRIC_EXPORT_INTERVAL_MS,
+      DEFAULT_TELEMETRY_METRIC_EXPORT_INTERVAL_MS,
+    ),
+    TELEMETRY_EXPORT_TIMEOUT_MS: boundedTelemetryInteger(
+      MIN_TELEMETRY_EXPORT_TIMEOUT_MS,
+      MAX_TELEMETRY_EXPORT_TIMEOUT_MS,
+      DEFAULT_TELEMETRY_EXPORT_TIMEOUT_MS,
+    ),
+
+    APP_RELEASE: appReleaseSchema.optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (
+      value.TELEMETRY_ENABLED &&
+      value.TELEMETRY_OTLP_ENDPOINT === undefined
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["TELEMETRY_OTLP_ENDPOINT"],
+        message:
+          "TELEMETRY_OTLP_ENDPOINT is required when TELEMETRY_ENABLED is true.",
+      });
+    }
+
+    // A metric export allowed to take longer than the gap between two collections
+    // would still be running when the next one begins, so the SDK refuses the
+    // combination when the reader is constructed. Catching it here turns a thrown
+    // provider error at startup into a named configuration mistake, and keeps the
+    // "invalid configuration degrades to a no-op" path honest.
+    if (
+      value.TELEMETRY_EXPORT_TIMEOUT_MS >
+      value.TELEMETRY_METRIC_EXPORT_INTERVAL_MS
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["TELEMETRY_EXPORT_TIMEOUT_MS"],
+        message:
+          "TELEMETRY_EXPORT_TIMEOUT_MS must not exceed TELEMETRY_METRIC_EXPORT_INTERVAL_MS.",
+      });
+    }
+  });
+
+/**
+ * Server-side error monitoring configuration.
+ *
+ * Independent of `TELEMETRY_ENABLED` on purpose. Traces and metrics are one
+ * decision, made about a collector; sending an unexpected failure to an
+ * error-monitoring provider is another, made about a vendor. A deployment may
+ * reasonably want either, both, or neither, and the two must not be able to
+ * disable each other.
+ *
+ * `SENTRY_DSN` becomes required only once `ERROR_MONITORING_ENABLED` is true. It
+ * is a credential: it is never logged, never echoed in a validation error, and
+ * never reported by a health or telemetry endpoint.
+ */
+export const MAX_SENTRY_DSN_LENGTH = 512;
+
+export const sentryDsnSchema = z
+  .string()
+  .min(1)
+  .max(MAX_SENTRY_DSN_LENGTH)
+  .refine(
+    (value) => {
+      try {
+        const url = new URL(value);
+
+        // A DSN is `https://<publicKey>@<host>/<projectId>`. The public key is
+        // the URL's username and the project id is its path, so both parts are
+        // checked structurally rather than by pattern.
+        return (
+          (url.protocol === "https:" || url.protocol === "http:") &&
+          url.username.length > 0 &&
+          url.password.length === 0 &&
+          url.pathname.length > 1
+        );
+      } catch {
+        return false;
+      }
+    },
+    {
+      // Names the shape, never the value.
+      message: "SENTRY_DSN must be a valid Sentry DSN.",
+    },
+  );
+
+const errorMonitoringFlagSchema = z
+  .enum(["true", "false"])
+  .transform((value) => value === "true");
+
+export const errorMonitoringEnvironmentSchema = z
+  .object({
+    ERROR_MONITORING_ENABLED: errorMonitoringFlagSchema.default(false),
+    SENTRY_DSN: sentryDsnSchema.optional(),
+    APP_RELEASE: appReleaseSchema.optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.ERROR_MONITORING_ENABLED && value.SENTRY_DSN === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["SENTRY_DSN"],
+        message:
+          "SENTRY_DSN is required when ERROR_MONITORING_ENABLED is true.",
+      });
+    }
+  });
+
 export type DatabaseEnvironment = z.output<typeof databaseEnvironmentSchema>;
 export type ServerEnvironment = z.output<typeof serverEnvironmentSchema>;
 export type PublicEnvironment = z.output<typeof publicEnvironmentSchema>;
 export type RedisEnvironment = z.output<typeof redisEnvironmentSchema>;
 export type JobsEnvironment = z.output<typeof jobsEnvironmentSchema>;
 export type StorageEnvironment = z.output<typeof storageEnvironmentSchema>;
+export type TelemetryEnvironment = z.output<typeof telemetryEnvironmentSchema>;
+export type ErrorMonitoringEnvironment = z.output<
+  typeof errorMonitoringEnvironmentSchema
+>;

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { traceContextSchema } from "../observability/trace-context";
+import { traceContextSchema } from "@/platform/observability/trace-context";
 
 import { isValidJobName, isValidJobVersion } from "./job-identity";
 

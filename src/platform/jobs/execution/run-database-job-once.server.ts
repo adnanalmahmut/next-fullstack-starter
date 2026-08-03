@@ -2,6 +2,10 @@ import "server-only";
 
 import { database } from "@/platform/database/index.server";
 import type { Prisma } from "@/generated/prisma/client";
+import {
+  DATABASE_OPERATION,
+  withDatabaseOperationSpan,
+} from "@/platform/observability/database-span.server";
 
 /**
  * A database effect that happens once, however many times the job is delivered.
@@ -56,20 +60,28 @@ export async function runDatabaseJobOnce<TResult>(
     throw new Error("A job execution requires an execution key.");
   }
 
-  return database.$transaction(
-    async (tx): Promise<DatabaseJobOutcome<TResult>> => {
-      const claimed = await tx.jobExecutionReceipt.createMany({
-        data: [{ executionKey, jobName, jobVersion }],
-        skipDuplicates: true,
-      });
+  // The span covers the receipt *and* the effect, because they are one
+  // transaction and one operational fact: either both happened or neither did.
+  // It carries the operation name and the outcome — never the execution key,
+  // which is derived from the payload's idempotency key.
+  return withDatabaseOperationSpan(
+    DATABASE_OPERATION.JOB_EXECUTION_RECEIPT,
+    () =>
+      database.$transaction(
+        async (tx): Promise<DatabaseJobOutcome<TResult>> => {
+          const claimed = await tx.jobExecutionReceipt.createMany({
+            data: [{ executionKey, jobName, jobVersion }],
+            skipDuplicates: true,
+          });
 
-      if (claimed.count === 0) {
-        return { executed: false };
-      }
+          if (claimed.count === 0) {
+            return { executed: false };
+          }
 
-      const result = await execute(tx);
+          const result = await execute(tx);
 
-      return { executed: true, result };
-    },
+          return { executed: true, result };
+        },
+      ),
   );
 }

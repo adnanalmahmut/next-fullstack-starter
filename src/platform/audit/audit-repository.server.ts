@@ -6,6 +6,10 @@ import {
   AuditResult as StoredResult,
 } from "@/generated/prisma/enums";
 import { database } from "@/platform/database/index.server";
+import {
+  DATABASE_OPERATION,
+  withDatabaseOperationSpan,
+} from "@/platform/observability/database-span.server";
 
 import { AUDIT_ACTOR_TYPE, type AuditActorType } from "./audit-actor";
 import { auditActorSessionId } from "./audit-actor";
@@ -69,25 +73,29 @@ export async function insertAuditRecord(
   client: AuditWriteClient,
   record: AuditRecordWrite,
 ): Promise<string> {
-  const row = await client.auditRecord.create({
-    data: {
-      actorType: STORED_ACTOR_TYPE[record.actor.type],
-      actorId: record.actor.id,
-      actorSessionId: auditActorSessionId(record.actor),
-      action: record.action,
-      resourceType: record.resourceType,
-      resourceId: record.resourceId,
-      result: STORED_RESULT[record.result],
-      requestId: record.requestId,
-      ...(record.metadata === null
-        ? {}
-        : { metadata: record.metadata as Prisma.InputJsonValue }),
-      ...(record.occurredAt === undefined
-        ? {}
-        : { occurredAt: record.occurredAt }),
-    },
-    select: { id: true },
-  });
+  const row = await withDatabaseOperationSpan(
+    DATABASE_OPERATION.AUDIT_APPEND,
+    () =>
+      client.auditRecord.create({
+        data: {
+          actorType: STORED_ACTOR_TYPE[record.actor.type],
+          actorId: record.actor.id,
+          actorSessionId: auditActorSessionId(record.actor),
+          action: record.action,
+          resourceType: record.resourceType,
+          resourceId: record.resourceId,
+          result: STORED_RESULT[record.result],
+          requestId: record.requestId,
+          ...(record.metadata === null
+            ? {}
+            : { metadata: record.metadata as Prisma.InputJsonValue }),
+          ...(record.occurredAt === undefined
+            ? {}
+            : { occurredAt: record.occurredAt }),
+        },
+        select: { id: true },
+      }),
+  );
 
   return row.id;
 }
@@ -113,32 +121,36 @@ export async function findAuditRecordPage(
   limit: number,
   cursor: AuditCursor | null,
 ): Promise<readonly StoredAuditRecord[]> {
-  const rows = await database.auditRecord.findMany({
-    ...(cursor === null
-      ? {}
-      : {
-          where: {
-            OR: [
-              { occurredAt: { lt: cursor.occurredAt } },
-              { occurredAt: cursor.occurredAt, id: { lt: cursor.id } },
-            ],
-          },
-        }),
-    orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
-    take: limit,
-    select: {
-      id: true,
-      occurredAt: true,
-      actorType: true,
-      actorId: true,
-      action: true,
-      resourceType: true,
-      resourceId: true,
-      result: true,
-      requestId: true,
-      metadata: true,
-    },
-  });
+  const rows = await withDatabaseOperationSpan(
+    DATABASE_OPERATION.AUDIT_LIST,
+    () =>
+      database.auditRecord.findMany({
+        ...(cursor === null
+          ? {}
+          : {
+              where: {
+                OR: [
+                  { occurredAt: { lt: cursor.occurredAt } },
+                  { occurredAt: cursor.occurredAt, id: { lt: cursor.id } },
+                ],
+              },
+            }),
+        orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
+        take: limit,
+        select: {
+          id: true,
+          occurredAt: true,
+          actorType: true,
+          actorId: true,
+          action: true,
+          resourceType: true,
+          resourceId: true,
+          result: true,
+          requestId: true,
+          metadata: true,
+        },
+      }),
+  );
 
   return rows.map((row) => ({
     id: row.id,

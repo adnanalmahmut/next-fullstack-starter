@@ -29,6 +29,15 @@ import { describe, expect, it } from "vitest";
 const projectRoot = process.cwd();
 const jobsRoot = "src/platform/jobs";
 const workerRoot = "src/worker";
+/**
+ * The trace-context contract lives here now.
+ *
+ * It moved when a second area came to need it, and this suite follows the file
+ * rather than asserting where it used to be: the outbox columns and the queue
+ * envelope are still owned by the jobs platform, so the guarantees about what
+ * they may carry belong in this suite.
+ */
+const observabilityRoot = "src/platform/observability";
 
 function read(filePath: string): string {
   return readFileSync(resolve(projectRoot, filePath), "utf8");
@@ -281,7 +290,7 @@ describe("driver containment", () => {
     expect(packageJson.devDependencies.tsx).toBeUndefined();
   });
 
-  it("adds no second queue, no dashboard, and no tracing SDK", () => {
+  it("adds no second queue and no dashboard", () => {
     const installed = {
       ...packageJson.dependencies,
       ...packageJson.devDependencies,
@@ -296,20 +305,26 @@ describe("driver containment", () => {
       "@bull-board/express",
       "bull-board",
       "redlock",
-      "@opentelemetry/sdk-node",
-      "@opentelemetry/sdk-trace-node",
-      "@opentelemetry/sdk-trace-base",
-      "@opentelemetry/auto-instrumentations-node",
-      "@opentelemetry/exporter-trace-otlp-http",
     ]) {
       expect(installed, forbidden).not.toHaveProperty(forbidden);
     }
+  });
 
-    const otel = Object.keys(installed).filter((name) =>
-      name.startsWith("@opentelemetry/"),
-    );
+  it("reaches the tracing SDK only through the observability platform", () => {
+    // The jobs platform owns two span names and their attributes; the SDK that
+    // exports them belongs to `src/platform/observability`, and the closed set of
+    // installed packages is asserted there. What matters here is that this
+    // directory still depends on the API facade alone, so background jobs stay
+    // removable without touching an exporter.
+    for (const path of jobsProduction) {
+      for (const specifier of readImports(read(path))) {
+        if (!specifier.startsWith("@opentelemetry/")) {
+          continue;
+        }
 
-    expect(otel).toEqual(["@opentelemetry/api"]);
+        expect(specifier, path).toBe("@opentelemetry/api");
+      }
+    }
   });
 
   it("keeps the Redis foundation's own driver installed and separate", () => {
@@ -803,12 +818,19 @@ describe("tracing", () => {
   });
 
   it("carries the two W3C headers and never baggage", () => {
-    const traceContext = read(`${jobsRoot}/observability/trace-context.ts`);
+    // The contract moved to the observability platform when a second area came to
+    // need it — the tracing helper that produces a carrier from the active span.
+    // The outbox columns and the queue envelope are still this platform's, so the
+    // assertions stay here and follow the file.
+    const traceContext = read(`${observabilityRoot}/trace-context.ts`);
 
     expect(traceContext).toContain("traceparent");
     expect(traceContext).toContain("tracestate");
     expect(stripComments(traceContext)).not.toMatch(/^\s*baggage/m);
 
+    // Propagation is performed by the observability platform through the official
+    // `inject` and `extract` APIs. This directory calls neither: it hands a stored
+    // carrier to the shared contract and never parses a header itself.
     for (const path of jobsProduction) {
       expect(stripComments(read(path)), path).not.toMatch(
         /\bpropagation\s*\.\s*(?:inject|extract)\b/,
@@ -817,7 +839,7 @@ describe("tracing", () => {
   });
 
   it("validates and bounds what it stores", () => {
-    const traceContext = read(`${jobsRoot}/observability/trace-context.ts`);
+    const traceContext = read(`${observabilityRoot}/trace-context.ts`);
 
     expect(traceContext).toContain("MAX_TRACESTATE_LENGTH");
     expect(traceContext).toContain("sanitizeTraceContext");
@@ -826,8 +848,16 @@ describe("tracing", () => {
 
   it("never fails a job", () => {
     const tracing = read(`${jobsRoot}/observability/tracing.ts`);
+    const shared = read(`${observabilityRoot}/tracing.server.ts`);
 
-    expect(tracing.match(/catch/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
+    // The guards live in the shared contract now, and there are more of them than
+    // this file ever had: the tracer, the context activation, the attributes, the
+    // status, and the span end are each contained separately.
+    expect(shared.match(/catch/g)?.length ?? 0).toBeGreaterThanOrEqual(6);
+
+    // And the job wrapper still contains its own outcome reporting.
+    expect(tracing).toContain("withActiveSpan");
+    expect(tracing).toContain("setOutcome");
   });
 });
 

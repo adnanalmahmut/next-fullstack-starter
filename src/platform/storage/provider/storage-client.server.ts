@@ -4,6 +4,7 @@ import { DependencyUnavailableError } from "@/shared/errors/application-error";
 
 import { getStorageConfiguration } from "../config";
 
+import { instrumentStorageProvider } from "./instrumented-storage-provider.server";
 import { createS3StorageProvider } from "./s3-storage-provider.server";
 import type { StorageProvider } from "./storage-provider";
 
@@ -51,7 +52,12 @@ export function getStorageProvider(): StorageProvider | null {
 
   const current = state();
 
-  current.provider ??= createS3StorageProvider(configuration);
+  // The decorator is applied here rather than inside the adapter, so every path to
+  // the bucket carries a span and no path can bypass one. Wrapping constructs
+  // nothing and contacts nothing; it is one object holding another.
+  current.provider ??= instrumentStorageProvider(
+    createS3StorageProvider(configuration),
+  );
 
   return current.provider;
 }

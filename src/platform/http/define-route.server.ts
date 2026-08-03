@@ -37,6 +37,7 @@ import {
   isExpectedApplicationError,
   toSafeLogError,
 } from "@/platform/observability/safe-error";
+import { SPAN_OUTCOME } from "@/platform/observability/tracing.server";
 import {
   ConflictError,
   RateLimitedError,
@@ -51,6 +52,7 @@ import {
   toRouteLogFields,
 } from "./log-event";
 import { readJsonBody, toQueryRecord } from "./request-input";
+import { withRouteTelemetry } from "./route-telemetry.server";
 import type {
   RouteContext,
   RouteFailureContext,
@@ -346,219 +348,258 @@ export function defineRoute<
       // Server services delegate to Better Auth on the caller's behalf and need
       // the caller's headers for it. They are put in the request scope here so a
       // use case never has to be handed them.
-      runWithCallerHeaders(request.headers, async () => {
-        // Rebuilt once an actor exists, so a refusal is attributable and nothing
-        // the allowlist does not name is ever carried.
-        let logBase: RouteLogInput = { routeName, method, requestId };
+      runWithCallerHeaders(request.headers, async () =>
+        // The span and the request metric wrap the *whole* lifecycle below — the
+        // rate limit, the validation, the actor, the authorization, the
+        // idempotency decision, the use case, and every post-success observer —
+        // because that is what the caller waited for. It changes no ordering and
+        // no response: the body reports its outcome and the wrapper records it.
+        withRouteTelemetry(
+          { routeName, method },
+          requestId,
+          async (telemetry) => {
+            // Rebuilt once an actor exists, so a refusal is attributable and nothing
+            // the allowlist does not name is ever carried.
+            let logBase: RouteLogInput = { routeName, method, requestId };
 
-        getRequestLogger().info(
-          toRouteLogFields(logBase),
-          ROUTE_LOG_EVENT.STARTED,
-        );
+            getRequestLogger().info(
+              toRouteLogFields(logBase),
+              ROUTE_LOG_EVENT.STARTED,
+            );
 
-        let inputs: RouteInputValues<TInput> | null = null;
-        let resolvedActor: Actor | null = null;
-        // Held so the failure path can release a claim the use case never got to
-        // fulfil. It is a local, not a shared map: nothing survives this request.
-        let reservation: IdempotencyReservation<TOutput> | undefined;
+            let inputs: RouteInputValues<TInput> | null = null;
+            let resolvedActor: Actor | null = null;
+            // Held so the failure path can release a claim the use case never got
+            // to fulfil. It is a local, not a shared map: nothing survives this
+            // request.
+            let reservation: IdempotencyReservation<TOutput> | undefined;
 
-        try {
-          const refusedAfterMs = await runRateLimitHooks(
-            definition.hooks?.rateLimit,
-            {
-              routeName,
-              method,
-              requestId,
-              headers: request.headers,
-            },
-          );
-
-          if (refusedAfterMs !== undefined) {
-            if (refusedAfterMs > 0) {
-              responseHeaders[RETRY_AFTER_HEADER] =
-                retryAfterSeconds(refusedAfterMs);
-            }
-
-            throw new RateLimitedError("The caller exceeded the allowed rate.");
-          }
-
-          inputs = await parseRouteInput(
-            definition.input,
-            request,
-            routeContext,
-          );
-
-          resolvedActor = await resolveActor(
-            definition.authorization,
-            request.headers,
-          );
-
-          logBase = { routeName, method, requestId, actor: resolvedActor };
-
-          if (resolvedActor) {
-            await authorizeActor(resolvedActor, definition.authorization);
-          }
-
-          // A conditional type cannot be established by control flow. The mode
-          // dispatch above enforces exactly what `AuthorizedActor` states —
-          // `null` for a public route, a resolved `Actor` for every other mode —
-          // and this is the single point where the runtime union and the
-          // declared type are joined.
-          const actor = resolvedActor as ResolvedActor;
-
-          const context: RouteContext<TInput, ResolvedActor> = {
-            routeName,
-            requestId,
-            ...inputs,
-            actor,
-          };
-
-          if (definition.idempotency) {
-            const decision = await definition.idempotency({
-              ...context,
-              method,
-              headers: request.headers,
-            });
-
-            if (decision.outcome === IDEMPOTENCY_OUTCOME.CONFLICT) {
-              throw new ConflictError(
-                "The idempotency key is already in use by a different or unfinished request.",
+            try {
+              const refusedAfterMs = await runRateLimitHooks(
+                definition.hooks?.rateLimit,
+                {
+                  routeName,
+                  method,
+                  requestId,
+                  headers: request.headers,
+                },
               );
-            }
 
-            if (decision.outcome === IDEMPOTENCY_OUTCOME.REPLAY) {
+              if (refusedAfterMs !== undefined) {
+                if (refusedAfterMs > 0) {
+                  responseHeaders[RETRY_AFTER_HEADER] =
+                    retryAfterSeconds(refusedAfterMs);
+                }
+
+                throw new RateLimitedError(
+                  "The caller exceeded the allowed rate.",
+                );
+              }
+
+              inputs = await parseRouteInput(
+                definition.input,
+                request,
+                routeContext,
+              );
+
+              resolvedActor = await resolveActor(
+                definition.authorization,
+                request.headers,
+              );
+
+              logBase = { routeName, method, requestId, actor: resolvedActor };
+
+              if (resolvedActor) {
+                await authorizeActor(resolvedActor, definition.authorization);
+              }
+
+              // A conditional type cannot be established by control flow. The mode
+              // dispatch above enforces exactly what `AuthorizedActor` states —
+              // `null` for a public route, a resolved `Actor` for every other mode
+              // — and this is the single point where the runtime union and the
+              // declared type are joined.
+              const actor = resolvedActor as ResolvedActor;
+
+              const context: RouteContext<TInput, ResolvedActor> = {
+                routeName,
+                requestId,
+                ...inputs,
+                actor,
+              };
+
+              if (definition.idempotency) {
+                const decision = await definition.idempotency({
+                  ...context,
+                  method,
+                  headers: request.headers,
+                });
+
+                if (decision.outcome === IDEMPOTENCY_OUTCOME.CONFLICT) {
+                  throw new ConflictError(
+                    "The idempotency key is already in use by a different or unfinished request.",
+                  );
+                }
+
+                if (decision.outcome === IDEMPOTENCY_OUTCOME.REPLAY) {
+                  getRequestLogger().info(
+                    toRouteLogFields({
+                      ...logBase,
+                      durationMs: timer.elapsedMs(),
+                      statusCode: successStatus,
+                      replayed: true,
+                    }),
+                    ROUTE_LOG_EVENT.REPLAYED,
+                  );
+
+                  // A replay is neither a fresh success nor a failure. Collapsing
+                  // it into `succeeded` would make a duplicate-submission rate
+                  // impossible to see.
+                  telemetry.report(SPAN_OUTCOME.REPLAYED, successStatus);
+
+                  return jsonSuccess(
+                    decision.output,
+                    successStatus,
+                    responseHeaders,
+                  );
+                }
+
+                reservation = decision.reservation;
+              }
+
+              await runGateHooks(definition.hooks?.beforeExecute, context);
+
+              const output = await definition.execute(context);
+
+              // Everything below this line runs after the use case has committed
+              // and is not transactional with it. A failure is recorded and the
+              // success response stands.
+              const successContext: RouteSuccessContext<
+                TInput,
+                ResolvedActor,
+                TOutput
+              > = { ...context, output };
+
+              if (reservation) {
+                await runObserverHooks(
+                  [reservation.complete],
+                  output,
+                  ROUTE_STEP.IDEMPOTENCY,
+                  logBase,
+                );
+              }
+
+              await runObserverHooks(
+                definition.hooks?.afterSuccess,
+                successContext,
+                ROUTE_HOOK.AFTER_SUCCESS,
+                logBase,
+              );
+
+              await runObserverHooks(
+                [
+                  async () => {
+                    await runCacheInvalidation(
+                      definition.revalidate,
+                      INVALIDATION_CONTEXT.ROUTE_HANDLER,
+                    );
+                  },
+                ],
+                undefined,
+                ROUTE_STEP.CACHE_INVALIDATION,
+                logBase,
+              );
+
+              await runObserverHooks(
+                definition.hooks?.audit,
+                successContext,
+                ROUTE_HOOK.AUDIT,
+                logBase,
+              );
+
+              const response = jsonSuccess(
+                output,
+                successStatus,
+                responseHeaders,
+              );
+
               getRequestLogger().info(
                 toRouteLogFields({
                   ...logBase,
                   durationMs: timer.elapsedMs(),
                   statusCode: successStatus,
-                  replayed: true,
                 }),
-                ROUTE_LOG_EVENT.REPLAYED,
+                ROUTE_LOG_EVENT.SUCCEEDED,
               );
 
-              return jsonSuccess(
-                decision.output,
-                successStatus,
-                responseHeaders,
-              );
-            }
+              telemetry.report(SPAN_OUTCOME.SUCCEEDED, successStatus);
 
-            reservation = decision.reservation;
-          }
+              return response;
+            } catch (error) {
+              const publicError: PublicError = toPublicError(error);
+              const durationMs = timer.elapsedMs();
+              const statusCode = httpStatusForError(publicError.code);
 
-          await runGateHooks(definition.hooks?.beforeExecute, context);
+              const failureContext: RouteFailureContext<TInput, ResolvedActor> =
+                {
+                  routeName,
+                  requestId,
+                  input: inputs,
+                  actor: resolvedActor as ResolvedActor | null,
+                  error: publicError,
+                };
 
-          const output = await definition.execute(context);
-
-          // Everything below this line runs after the use case has committed and
-          // is not transactional with it. A failure is recorded and the success
-          // response stands.
-          const successContext: RouteSuccessContext<
-            TInput,
-            ResolvedActor,
-            TOutput
-          > = { ...context, output };
-
-          if (reservation) {
-            await runObserverHooks(
-              [reservation.complete],
-              output,
-              ROUTE_STEP.IDEMPOTENCY,
-              logBase,
-            );
-          }
-
-          await runObserverHooks(
-            definition.hooks?.afterSuccess,
-            successContext,
-            ROUTE_HOOK.AFTER_SUCCESS,
-            logBase,
-          );
-
-          await runObserverHooks(
-            [
-              async () => {
-                await runCacheInvalidation(
-                  definition.revalidate,
-                  INVALIDATION_CONTEXT.ROUTE_HANDLER,
+              // Released before anything else, so the retry the client is about to
+              // send is not refused by a claim whose attempt is already over. It is
+              // isolated for the same reason every post-outcome step is: a failed
+              // release must not replace the failure the caller needs to see.
+              if (reservation) {
+                await runObserverHooks(
+                  [reservation.abort],
+                  undefined,
+                  ROUTE_STEP.IDEMPOTENCY,
+                  logBase,
                 );
-              },
-            ],
-            undefined,
-            ROUTE_STEP.CACHE_INVALIDATION,
-            logBase,
-          );
+              }
 
-          await runObserverHooks(
-            definition.hooks?.audit,
-            successContext,
-            ROUTE_HOOK.AUDIT,
-            logBase,
-          );
+              await runObserverHooks(
+                definition.hooks?.afterFailure,
+                failureContext,
+                ROUTE_HOOK.AFTER_FAILURE,
+                logBase,
+              );
 
-          const response = jsonSuccess(output, successStatus, responseHeaders);
+              const fields = toRouteLogFields({
+                ...logBase,
+                durationMs,
+                statusCode,
+                errorCode: publicError.code,
+              });
+              const log = getRequestLogger();
 
-          getRequestLogger().info(
-            toRouteLogFields({
-              ...logBase,
-              durationMs: timer.elapsedMs(),
-              statusCode: successStatus,
-            }),
-            ROUTE_LOG_EVENT.SUCCEEDED,
-          );
+              // A refused request is expected traffic; an unexpected failure is
+              // not.
+              if (isExpectedApplicationError(error)) {
+                log.warn(fields, ROUTE_LOG_EVENT.FAILED);
+              } else {
+                log.error(fields, ROUTE_LOG_EVENT.FAILED);
 
-          return response;
-        } catch (error) {
-          const publicError: PublicError = toPublicError(error);
-          const durationMs = timer.elapsedMs();
+                // This boundary owns the unexpected failures it turns into a
+                // response. Because the error never escapes to Next.js,
+                // `onRequestError` will not see it, so it is reported exactly once.
+                telemetry.captureFailure(error, publicError.code);
+              }
 
-          const failureContext: RouteFailureContext<TInput, ResolvedActor> = {
-            routeName,
-            requestId,
-            input: inputs,
-            actor: resolvedActor as ResolvedActor | null,
-            error: publicError,
-          };
+              telemetry.report(
+                SPAN_OUTCOME.FAILED,
+                statusCode,
+                publicError.code,
+              );
 
-          // Released before anything else, so the retry the client is about to
-          // send is not refused by a claim whose attempt is already over. It is
-          // isolated for the same reason every post-outcome step is: a failed
-          // release must not replace the failure the caller needs to see.
-          if (reservation) {
-            await runObserverHooks(
-              [reservation.abort],
-              undefined,
-              ROUTE_STEP.IDEMPOTENCY,
-              logBase,
-            );
-          }
-
-          await runObserverHooks(
-            definition.hooks?.afterFailure,
-            failureContext,
-            ROUTE_HOOK.AFTER_FAILURE,
-            logBase,
-          );
-
-          const fields = toRouteLogFields({
-            ...logBase,
-            durationMs,
-            statusCode: httpStatusForError(publicError.code),
-            errorCode: publicError.code,
-          });
-          const log = getRequestLogger();
-
-          // A refused request is expected traffic; an unexpected failure is not.
-          if (isExpectedApplicationError(error)) {
-            log.warn(fields, ROUTE_LOG_EVENT.FAILED);
-          } else {
-            log.error(fields, ROUTE_LOG_EVENT.FAILED);
-          }
-
-          return jsonError(error, responseHeaders);
-        }
-      }),
+              return jsonError(error, responseHeaders);
+            }
+          },
+        ),
+      ),
     );
   };
 }

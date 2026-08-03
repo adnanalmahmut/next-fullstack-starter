@@ -2,7 +2,15 @@ import "server-only";
 
 import { UnrecoverableError, type Job } from "bullmq";
 
+import { ERROR_BOUNDARY } from "@/platform/observability/error-monitoring/error-monitor";
+import { captureUnexpectedError } from "@/platform/observability/error-monitoring/error-monitor.server";
+import {
+  recordJobDeadLettered,
+  recordJobExecution,
+  recordJobRetry,
+} from "@/platform/observability/metrics.server";
 import { startOperationTimer } from "@/platform/observability/operation-timer.server";
+import { runWithRemoteTraceContext } from "@/platform/observability/tracing.server";
 
 import type { JobExecutionContext } from "../definitions/define-job";
 import { jobEnvelopeSchema } from "../definitions/job-envelope";
@@ -119,20 +127,33 @@ export function createJobProcessor(registry: JobRegistry): JobProcessor {
     const timer = startOperationTimer();
 
     try {
-      const result = await withJobSpan(
-        JOB_SPAN.EXECUTE,
-        {
-          jobName: context.jobName,
-          jobVersion: context.jobVersion,
-          outboxId: context.outboxId,
-          attempt: context.attempt,
-        },
+      // The remote parent is restored before the span is opened, so `jobs.execute`
+      // is a child of the `jobs.outbox.publish` span that queued this message —
+      // which is itself a child of the request that wrote the row. Envelope trace
+      // context that fails validation is dropped and the job runs as a root: a
+      // mangled header must never stop work from being done.
+      const result = await runWithRemoteTraceContext(
+        envelope.traceContext,
         () =>
-          runWithJobTimeout(
-            runtime.timeoutMs,
-            runtime.timeoutRetryable,
-            (signal) =>
-              runtime.run({ payload: parsedPayload.payload, signal, context }),
+          withJobSpan(
+            JOB_SPAN.EXECUTE,
+            {
+              jobName: context.jobName,
+              jobVersion: context.jobVersion,
+              outboxId: context.outboxId,
+              attempt: context.attempt,
+            },
+            () =>
+              runWithJobTimeout(
+                runtime.timeoutMs,
+                runtime.timeoutRetryable,
+                (signal) =>
+                  runtime.run({
+                    payload: parsedPayload.payload,
+                    signal,
+                    context,
+                  }),
+              ),
           ),
       );
 
@@ -148,10 +169,19 @@ export function createJobProcessor(registry: JobRegistry): JobProcessor {
         );
       }
 
+      const durationMs = timer.elapsedMs();
+
       logJobEvent(JOB_LOG_LEVEL.INFO, JOBS_LOG_EVENT.JOB_SUCCEEDED, {
         ...fields,
-        durationMs: timer.elapsedMs(),
+        durationMs,
         outcome: JOB_OUTCOME.SUCCEEDED,
+      });
+
+      recordJobExecution({
+        jobName: context.jobName,
+        jobVersion: context.jobVersion,
+        outcome: JOB_OUTCOME.SUCCEEDED,
+        durationMs,
       });
 
       return parsedResult.result;
@@ -180,7 +210,25 @@ export function createJobProcessor(registry: JobRegistry): JobProcessor {
         },
       );
 
-      if (!willRetry) {
+      // One attempt, one execution sample. The retry counter is incremented on
+      // exactly one branch below and the dead-letter counter on the other, so an
+      // attempt is never counted as both — which is the failure mode of recording
+      // a metric next to each of the three log lines above.
+      recordJobExecution({
+        jobName: context.jobName,
+        jobVersion: context.jobVersion,
+        outcome: willRetry ? JOB_OUTCOME.RETRYING : JOB_OUTCOME.FAILED,
+        durationMs: timer.elapsedMs(),
+      });
+
+      const identity = {
+        jobName: context.jobName,
+        jobVersion: context.jobVersion,
+      };
+
+      if (willRetry) {
+        recordJobRetry(identity);
+      } else {
         // The work has stopped being attempted — either because it can never
         // succeed or because the budget is spent. That is a distinct
         // operational fact from a single failed attempt, and it is the one an
@@ -190,6 +238,19 @@ export function createJobProcessor(registry: JobRegistry): JobProcessor {
           ...fields,
           outcome: JOB_OUTCOME.DEAD_LETTERED,
           errorCode,
+        });
+
+        recordJobDeadLettered(identity);
+
+        // The one failure this boundary reports: work that has stopped being
+        // attempted. A transient attempt that will be retried is deliberately not
+        // reported — it is expected during an outage, and reporting each one would
+        // send an event per attempt per job for a condition that resolves itself.
+        captureUnexpectedError(error, {
+          boundary: ERROR_BOUNDARY.JOB,
+          operationName: context.jobName,
+          jobName: context.jobName,
+          jobVersion: context.jobVersion,
         });
       }
 

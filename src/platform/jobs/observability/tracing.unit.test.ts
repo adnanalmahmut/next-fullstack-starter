@@ -1,17 +1,44 @@
-import { context, trace, type Tracer } from "@opentelemetry/api";
+import { trace, type Tracer } from "@opentelemetry/api";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { currentTraceContext, JOB_SPAN, withJobSpan } from "./tracing";
+import { JOB_SPAN, withJobSpan } from "./tracing";
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/**
+ * A span whose recorded calls can be inspected.
+ *
+ * `setAttributes`, `setAttribute`, `setStatus`, and `end` are all present, because
+ * the shared tracing contract calls each of them and a missing method would be
+ * swallowed by its guards — which would make an assertion pass for the wrong
+ * reason.
+ */
+function createSpanDouble() {
+  return {
+    setAttribute: vi.fn(),
+    setAttributes: vi.fn(),
+    setStatus: vi.fn(),
+    end: vi.fn(),
+  };
+}
+
+function mockTracer(span: ReturnType<typeof createSpanDouble>) {
+  const startSpan = vi.fn(() => span);
+
+  vi.spyOn(trace, "getTracer").mockReturnValue({
+    startSpan,
+  } as unknown as Tracer);
+
+  return startSpan;
+}
+
 describe("with no SDK registered", () => {
   it("runs the operation and returns its value", () => {
     // The API package is a facade. With nothing registered every call is a
-    // no-op, which is what lets this project depend on it without choosing a
-    // vendor for a downstream project.
+    // no-op, which is what lets a job be traced on a deployment that exports
+    // nothing.
     return expect(
       withJobSpan(JOB_SPAN.EXECUTE, { jobName: "a.b" }, async () => "value"),
     ).resolves.toBe("value");
@@ -26,10 +53,6 @@ describe("with no SDK registered", () => {
       }),
     ).rejects.toBe(failure);
   });
-
-  it("reports no trace context", () => {
-    expect(currentTraceContext()).toBeUndefined();
-  });
 });
 
 describe("tracing never fails a job", () => {
@@ -43,56 +66,24 @@ describe("tracing never fails a job", () => {
     ).resolves.toBe("value");
   });
 
-  it("runs the operation even when activating the span throws", async () => {
-    const span = {
-      setStatus: vi.fn(),
-      end: vi.fn(),
-    };
-
-    vi.spyOn(trace, "getTracer").mockReturnValue({
-      startSpan: () => span,
-    } as unknown as Tracer);
-    vi.spyOn(context, "with").mockImplementation(() => {
-      throw new Error("context is broken");
-    });
-
-    await expect(
-      withJobSpan(JOB_SPAN.EXECUTE, {}, async () => "value"),
-    ).resolves.toBe("value");
-    expect(span.end).toHaveBeenCalled();
-  });
-
   it("swallows a failure to end the span", async () => {
-    vi.spyOn(trace, "getTracer").mockReturnValue({
-      startSpan: () => ({
-        setStatus: vi.fn(),
-        end: () => {
-          throw new Error("end is broken");
-        },
-      }),
-    } as unknown as Tracer);
+    const span = createSpanDouble();
+
+    span.end.mockImplementation(() => {
+      throw new Error("end is broken");
+    });
+    mockTracer(span);
 
     await expect(
       withJobSpan(JOB_SPAN.EXECUTE, {}, async () => "value"),
     ).resolves.toBe("value");
-  });
-
-  it("answers undefined when reading the active span throws", () => {
-    vi.spyOn(trace, "getActiveSpan").mockImplementation(() => {
-      throw new Error("broken");
-    });
-
-    expect(currentTraceContext()).toBeUndefined();
   });
 });
 
-describe("span attributes", () => {
-  it("carry identity only, never a payload", async () => {
-    const startSpan = vi.fn(() => ({ setStatus: vi.fn(), end: vi.fn() }));
-
-    vi.spyOn(trace, "getTracer").mockReturnValue({
-      startSpan,
-    } as unknown as Tracer);
+describe("job span identity", () => {
+  it("carries identity only, never a payload", async () => {
+    const span = createSpanDouble();
+    const startSpan = mockTracer(span);
 
     await withJobSpan(
       JOB_SPAN.EXECUTE,
@@ -110,12 +101,17 @@ describe("span attributes", () => {
     });
   });
 
-  it("marks a failed span with a status code and no message", async () => {
-    const setStatus = vi.fn();
+  it("uses the two stable span names and nothing else", () => {
+    expect(JOB_SPAN).toEqual({
+      OUTBOX_PUBLISH: "jobs.outbox.publish",
+      EXECUTE: "jobs.execute",
+    });
+  });
 
-    vi.spyOn(trace, "getTracer").mockReturnValue({
-      startSpan: () => ({ setStatus, end: vi.fn() }),
-    } as unknown as Tracer);
+  it("marks a failed span with a status code and no message", async () => {
+    const span = createSpanDouble();
+
+    mockTracer(span);
 
     await expect(
       withJobSpan(JOB_SPAN.EXECUTE, {}, async () => {
@@ -125,35 +121,26 @@ describe("span attributes", () => {
 
     // A status message would be the error message, and an error message is the
     // usual way an address escapes into a trace.
-    expect(setStatus).toHaveBeenCalledTimes(1);
-    expect(Object.keys(setStatus.mock.calls[0]?.[0] ?? {})).toEqual(["code"]);
-  });
-});
+    expect(span.setStatus).toHaveBeenCalledTimes(1);
+    expect(Object.keys(span.setStatus.mock.calls[0]?.[0] ?? {})).toEqual([
+      "code",
+    ]);
 
-describe("reading the caller's trace context", () => {
-  it("formats a valid span context as a W3C traceparent", () => {
-    vi.spyOn(trace, "getActiveSpan").mockReturnValue({
-      spanContext: () => ({
-        traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
-        spanId: "00f067aa0ba902b7",
-        traceFlags: 1,
-      }),
-    } as never);
+    // The outcome is an attribute; the failure's message and stack are nowhere.
+    const attributeCalls = span.setAttribute.mock.calls.map((call) => call[0]);
 
-    expect(currentTraceContext()).toEqual({
-      traceparent: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
-    });
+    expect(attributeCalls).toEqual(["app.outcome"]);
+    expect(span.setAttribute).toHaveBeenCalledWith("app.outcome", "failed");
   });
 
-  it("ignores an invalid span context", () => {
-    vi.spyOn(trace, "getActiveSpan").mockReturnValue({
-      spanContext: () => ({
-        traceId: "00000000000000000000000000000000",
-        spanId: "0000000000000000",
-        traceFlags: 0,
-      }),
-    } as never);
+  it("marks a successful span as succeeded", async () => {
+    const span = createSpanDouble();
 
-    expect(currentTraceContext()).toBeUndefined();
+    mockTracer(span);
+
+    await withJobSpan(JOB_SPAN.OUTBOX_PUBLISH, {}, async () => "value");
+
+    expect(span.setAttribute).toHaveBeenCalledWith("app.outcome", "succeeded");
+    expect(span.end).toHaveBeenCalledTimes(1);
   });
 });
