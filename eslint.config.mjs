@@ -516,6 +516,70 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    name: "architecture/health-platform",
+    files: ["src/platform/health/**/*.{ts,tsx}"],
+    // The health platform asks three areas whether they are answering and turns
+    // the results into one response. It owns no probe of its own, and that is
+    // deliberate: the question "is PostgreSQL up" can only be asked by the area
+    // that owns the client, so `@/platform/database` is the one persistence
+    // import allowed here while Prisma, `pg`, and the Redis and AWS drivers are
+    // all refused — a probe that built its own client would put a second
+    // connection behind the endpoint a load balancer calls.
+    //
+    // Background jobs are refused too, and that one is worth stating plainly:
+    // web readiness must not check the queue, and if this directory imported the
+    // jobs area then deleting background jobs from a generated project would
+    // mean editing the health platform. The worker readiness contract takes its
+    // checks as arguments for exactly that reason.
+    //
+    // `next/server` is the one Next.js import allowed, and only for
+    // `connection()`: with Cache Components enabled a GET handler that reads no
+    // request data is prerendered at build time, and a prerendered liveness
+    // answer is produced by `next build` rather than by the process being probed.
+    rules: {
+      "no-restricted-imports": restrictImports(
+        restrictedImportPatterns.prisma,
+        restrictedImportPatterns.postgres,
+        restrictedImportPatterns.redis,
+        restrictedImportPatterns.queue,
+        restrictedImportPatterns.awsSdk,
+        restrictedImportPatterns.jobs,
+        restrictedImportPatterns.worker,
+        restrictedImportPatterns.audit,
+        restrictedImportPatterns.cache,
+        restrictedImportPatterns.concurrency,
+        restrictedImportPatterns.betterAuth,
+        restrictedImportPatterns.react,
+        restrictedImportPatterns.translations,
+        {
+          regex: "^next$|^next/(?!server$)",
+          message:
+            "The health platform may use only `connection()` from next/server; it must not read a request, redirect, or mutate a cookie.",
+        },
+        {
+          regex: "^@/platform/auth(?:/|$)",
+          message:
+            "The health platform must not depend on authentication. An operational probe is called by a load balancer with no credentials, and resolving a session would make the endpoint depend on the database it is trying to report on.",
+        },
+        {
+          regex: "^@/platform/(?:actions|http|proxy)(?:/|$)",
+          message:
+            "The health platform must not depend on an application adapter. An operational probe answers a flat document and a dynamic 503, neither of which the versioned API contract can express.",
+        },
+        {
+          regex: "^@/(?:app|modules|ui)(?:/|$)",
+          message:
+            "The health platform must not depend on application routing, business modules, or UI code.",
+        },
+        {
+          regex: "^(?:\\.\\.?/)+(?:[^/]+/)*(?:app|modules|ui)(?:/|$)",
+          message:
+            "The health platform must not reach application routing, business modules, or UI code through relative imports.",
+        },
+      ),
+    },
+  },
+  {
     name: "architecture/worker-entry-points",
     files: ["src/worker/**/*.ts"],
     // A worker entry point owns a process: signal handlers, an exit code, and
@@ -819,6 +883,11 @@ const eslintConfig = defineConfig([
   {
     name: "architecture/app-routing",
     files: ["src/app/**/*.{ts,tsx}"],
+    // Object storage and the AWS SDK are refused here alongside persistence and
+    // the queue. Bytes never pass through Next.js — a module asks for an upload
+    // intent through a normal action and the browser uploads straight to the
+    // provider — so a routing file that reached for a bucket would be building a
+    // path that is not supposed to exist.
     rules: {
       "no-restricted-imports": restrictImports(
         restrictedImportPatterns.prisma,
@@ -827,6 +896,8 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.redis,
         restrictedImportPatterns.queue,
         restrictedImportPatterns.jobs,
+        restrictedImportPatterns.storage,
+        restrictedImportPatterns.awsSdk,
       ),
     },
   },
@@ -849,6 +920,8 @@ const eslintConfig = defineConfig([
         restrictedImportPatterns.redis,
         restrictedImportPatterns.queue,
         restrictedImportPatterns.jobs,
+        restrictedImportPatterns.storage,
+        restrictedImportPatterns.awsSdk,
         restrictedImportPatterns.betterAuth,
         {
           regex: "^@/platform/http/(?!index\\.server(?:\\.[cm]?[jt]sx?)?$).+",
@@ -900,6 +973,72 @@ const eslintConfig = defineConfig([
             "CallExpression[callee.name=/^require(?:Actor|Permission|AnyPermission|AllPermissions)$/]",
           message:
             "A Route Handler must declare its authorization mode instead of checking a capability itself.",
+        },
+      ],
+    },
+  },
+  {
+    name: "architecture/health-routes",
+    files: ["src/app/api/health/**/route.{ts,tsx}"],
+    // The two operational probes are the one exception to `defineRoute`, and the
+    // exception is exactly two files wide. Each is a declaration: it names a path
+    // and takes a handler the health platform built. Everything the factory would
+    // otherwise do — reading a request, catching an error, choosing a status,
+    // serializing a body — belongs to that adapter, so restating any of it here is
+    // refused, and so is wrapping these routes in the factory.
+    //
+    // This block replaces the `architecture/app-routing` restrictions for these
+    // files rather than adding to them, so the persistence patterns are repeated
+    // here; a contract test proves both sets still apply.
+    rules: {
+      "no-restricted-imports": restrictImports(
+        restrictedImportPatterns.prisma,
+        restrictedImportPatterns.database,
+        restrictedImportPatterns.postgres,
+        restrictedImportPatterns.redis,
+        restrictedImportPatterns.queue,
+        restrictedImportPatterns.jobs,
+        restrictedImportPatterns.storage,
+        restrictedImportPatterns.awsSdk,
+        restrictedImportPatterns.betterAuth,
+        {
+          regex: "^@/platform/http(?:/|$)",
+          message:
+            "An operational probe is not a versioned endpoint and must not be wrapped in the Route Handler factory; it answers a flat document and a dynamic 503.",
+        },
+        {
+          regex:
+            "^@/platform/health/(?!(?:index|liveness|readiness)\\.server(?:\\.[cm]?[jt]sx?)?$).+",
+          message:
+            "A health route must use one of the controlled entry points @/platform/health/{index,liveness,readiness}.server.",
+        },
+        {
+          regex: "^next/(?:headers|server)$",
+          message:
+            "A health probe must not read the request; the handler the platform builds takes no input at all.",
+        },
+      ),
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "TryStatement",
+          message:
+            "A health route must not map errors itself; the health adapter contains every failure and answers the ordinary document.",
+        },
+        {
+          selector: "NewExpression[callee.name='Response']",
+          message:
+            "A health route must not build a response; the health adapter serializes the document and sets no-store.",
+        },
+        {
+          selector: "Identifier[name='NextResponse']",
+          message:
+            "A health route must not build a response; the health adapter serializes the document and sets no-store.",
+        },
+        {
+          selector: "CallExpression[callee.property.name='json']",
+          message:
+            "A health route must not serialize a response; the health adapter owns the body and the headers.",
         },
       ],
     },

@@ -176,19 +176,24 @@ describe("no core module depends on Redis", () => {
   );
 
   /**
-   * The two platform areas allowed to build on Redis.
+   * The three platform areas allowed to name Redis.
    *
-   * They are the reason Redis exists in this repository, and they are the only
-   * production code that may name it. Everything else — auth, database, actions,
-   * http, proxy, observability, app, modules, ui — reaches these areas instead,
-   * so deleting Redis is still a matter of deleting directories.
+   * The cache and the concurrency controls are the reason Redis exists in this
+   * repository. The health platform is the third, and it takes nothing but the
+   * health contract: a readiness probe has to be able to say whether an enabled
+   * Redis is answering, and only the area that owns the connection can tell it.
+   *
+   * Everything else — auth, database, actions, http, proxy, observability, app,
+   * modules, ui — reaches these areas instead, so deleting Redis is still a matter
+   * of deleting directories and one registry entry.
    */
   const redisDependentRoots = [
     "src/platform/cache/",
     "src/platform/concurrency/",
+    "src/platform/health/",
   ];
 
-  it("is imported only by the cache and concurrency platforms and by tests", () => {
+  it("is imported only by the cache, concurrency, and health platforms and by tests", () => {
     const importers = repositorySources.filter(
       (path) =>
         !path.startsWith(`${redisRoot}/`) &&

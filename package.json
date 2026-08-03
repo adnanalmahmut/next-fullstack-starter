@@ -39,6 +39,7 @@
     "jobs:worker:dev": "tsx watch --conditions=react-server src/worker/jobs.worker.ts",
     "jobs:outbox:once": "tsx --conditions=react-server src/worker/jobs.outbox-once.ts",
     "jobs:status": "tsx --conditions=react-server src/worker/jobs.status.ts",
+    "jobs:health": "tsx --conditions=react-server src/worker/jobs.health.ts",
     "lint": "eslint --max-warnings=0",
     "architecture:check": "depcruise --config .dependency-cruiser.js --output-type err-long -- src tests",
     "typecheck": "tsc --noEmit",

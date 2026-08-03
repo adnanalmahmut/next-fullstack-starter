@@ -429,6 +429,8 @@ describe("proxy route rules", () => {
       "/api/auth/[...all]",
       "/api/diagnostics/auth-session",
       "/api/diagnostics/request-context",
+      "/api/health/live",
+      "/api/health/ready",
       "/api/v1/admin/audit",
       "/api/v1/admin/users",
       "/api/v1/admin/users/[userId]",

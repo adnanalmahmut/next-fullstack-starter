@@ -123,6 +123,40 @@ export function createWorkerConnection(url: string): Redis {
 }
 
 /**
+ * The connection a one-shot health probe uses.
+ *
+ * It retries nothing, and that is the whole difference. A producer is allowed a
+ * few reconnects because it would rather publish late than fail; a probe is
+ * asking a question whose answer is "right now", so a reconnect would turn "the
+ * queue is unreachable" into "the queue is unreachable, reported fifteen seconds
+ * later" — long enough for a deployment gate to time out and for an operator to
+ * conclude the command is broken rather than the queue.
+ *
+ * `enableOfflineQueue: false` matters for the same reason: without it a `PING`
+ * against a dead server would sit in a buffer instead of being refused, and the
+ * probe would report a timeout rather than a refusal.
+ *
+ * It is never cached. Each probe builds one and closes it in a `finally`, so a
+ * repeated readiness check cannot accumulate sockets against a Redis that is
+ * already struggling.
+ */
+export function createProbeConnection(url: string): Redis {
+  const connection = new Redis(url, {
+    ...sharedOptions,
+    maxRetriesPerRequest: 1,
+    enableOfflineQueue: false,
+    retryStrategy: () => null,
+  });
+
+  attachErrorListener(
+    connection,
+    JOBS_LOG_EVENT.QUEUE_PRODUCER_CONNECTION_FAILED,
+  );
+
+  return connection;
+}
+
+/**
  * Closes a connection, and does not fail if it was never open.
  *
  * `quit` waits for in-flight commands; `disconnect` is the fallback for a socket

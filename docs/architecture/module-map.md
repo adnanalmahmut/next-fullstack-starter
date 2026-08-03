@@ -279,6 +279,34 @@ calling module makes — and bytes never pass through Next.js. The detailed poli
 is defined in
 [`object-storage-and-uploads.md`](./object-storage-and-uploads.md).
 
+### Operational health
+
+```text
+src/platform/health
+src/app/api/health/live
+src/app/api/health/ready
+src/worker/jobs.health.ts
+```
+
+Responsibilities:
+
+- Own the closed set of machine codes, the status vocabularies, the dependency
+  port, the immutable registry, and the bounded orchestration around it.
+- Answer liveness from a constant, reaching no dependency at all.
+- Answer web readiness from PostgreSQL plus whichever optional dependencies are
+  enabled, mapping a disabled one to `disabled` rather than to a fault.
+- Answer worker readiness as an exit code, distinguishing "something is down"
+  from "this will never start".
+- Contain every failure, bound every check independently, and keep every address,
+  bucket, credential, and exception out of both the document and the log line.
+
+It owns no probe of its own: each check belongs to the area that owns the client,
+and the worker's queue check is injected by the worker entry point so this area
+never imports `@/platform/jobs`. The two routes are the only exception to
+`defineRoute` in the repository, and the exception is exactly two files wide. The
+detailed policy is defined in
+[`operational-health.md`](./operational-health.md).
+
 ### Authentication
 
 ```text

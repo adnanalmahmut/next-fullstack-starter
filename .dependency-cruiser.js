@@ -224,6 +224,70 @@ module.exports = {
       },
     },
     {
+      name: "no-health-platform-internal-imports",
+      comment:
+        "Operational health is reached through one of its three controlled entry points: index.server.ts for the shared contracts, liveness.server.ts for the liveness handler, readiness.server.ts for the readiness handler. The split is by process — the shared entry point must stay free of Next.js and of the three platform areas a probe asks about, so a worker command can use the contracts without loading them.",
+      severity: "error",
+      from: {
+        path: "^src/",
+        pathNot: "^src/platform/health/",
+      },
+      to: {
+        path: "^src/platform/health/(?!(?:index|liveness|readiness)\\.server\\.ts$).+",
+      },
+    },
+    {
+      name: "no-health-adapter-outside-health-routes",
+      comment:
+        "The health adapter is an exception to defineRoute, and the exception is exactly two files wide. Every other endpoint the application owns is built by the Route Handler factory; a third route reaching for this adapter would turn a narrow operational carve-out into a general escape hatch from validation, authorization, and the response envelope.",
+      severity: "error",
+      from: {
+        path: "^src/app/",
+        pathNot: "^src/app/api/health/(?:live|ready)/route\\.ts$",
+      },
+      to: {
+        path: "^src/platform/health/",
+      },
+    },
+    {
+      name: "no-liveness-reaching-dependencies",
+      comment:
+        "The liveness endpoint must answer when every external service is down, so its import graph must not reach one — transitively included. Importing the database entry point alone would construct a Prisma client, and the endpoint would still answer 200 while quietly holding a connection pool, which is the failure nobody would ever notice.",
+      severity: "error",
+      from: {
+        path: "^src/app/api/health/live/route\\.ts$",
+      },
+      to: {
+        path: "^src/(?:platform/(?:database|redis|storage|jobs|auth|audit|cache|concurrency)|worker)/|(?:^|/)node_modules/(?:@prisma/|prisma/|pg/|redis/|ioredis/|bullmq/|@aws-sdk/|aws-sdk/|better-auth/)",
+        reachable: true,
+      },
+    },
+    {
+      name: "no-readiness-reaching-the-queue",
+      comment:
+        "Web readiness must not depend on background jobs, transitively included. A request records work by writing an outbox row inside its own transaction, so a web instance with no queue and no worker anywhere is ready — and a probe that checked the queue would drain traffic from instances that were serving perfectly because a different deployment was down.",
+      severity: "error",
+      from: {
+        path: "^src/app/api/health/ready/route\\.ts$",
+      },
+      to: {
+        path: "^src/(?:platform/jobs|worker)/|(?:^|/)node_modules/(?:bullmq|ioredis)/",
+        reachable: true,
+      },
+    },
+    {
+      name: "no-health-to-application-areas",
+      comment:
+        "The health platform must not depend on authentication, auditing, caching, the concurrency controls, background jobs, the worker, an application adapter, routing, UI, translations, or business modules. It asks three areas whether they are answering and reports the result; who is calling and what it means for a feature are not its questions. Keeping the jobs area out is what lets a generated project delete it without editing this directory.",
+      severity: "error",
+      from: {
+        path: "^src/platform/health/",
+      },
+      to: {
+        path: "^src/(?:platform/(?:auth|audit|cache|concurrency|jobs|actions|http|proxy)|worker|app|modules|ui|i18n)/",
+      },
+    },
+    {
       name: "no-unresolvable-dependencies",
       comment: "All internal dependencies must resolve successfully.",
       severity: "error",
