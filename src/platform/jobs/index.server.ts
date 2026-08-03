@@ -165,6 +165,21 @@ export {
  */
 export { closeJobQueue, JOBS_QUEUE_NAME } from "./queue/job-queue.server";
 
+/**
+ * The queue connectivity contract, for a worker readiness check.
+ *
+ * It is exported for the same reason `closeJobQueue` is: it opens a bounded
+ * connection, closes it, and hands back a status. It cannot be used to publish,
+ * to consume, or to reach the `Queue` at all.
+ */
+export {
+  checkJobsQueueHealth,
+  JOBS_QUEUE_HEALTH_STATUS,
+  JOBS_REDIS_UNAVAILABLE,
+  type JobsQueueHealth,
+  type JobsQueueHealthStatus,
+} from "./queue/queue-health.server";
+
 export {
   startJobsWorkerRuntime,
   type JobsWorkerRuntime,

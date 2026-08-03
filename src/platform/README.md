@@ -216,6 +216,36 @@ Implementation rules are documented in
 [`storage/README.md`](./storage/README.md) and the architectural policy in
 [`docs/architecture/object-storage-and-uploads.md`](../../docs/architecture/object-storage-and-uploads.md).
 
+## Operational health
+
+Two HTTP probes and one worker command live under `src/platform/health`, with the
+PostgreSQL check owned by `src/platform/database` and the queue check by
+`src/platform/jobs`.
+
+- `health-code.ts` and `health-status.ts` own the closed code set and the four
+  status vocabularies; nothing here is derived from an error.
+- `dependency-check.ts` and `health-registry.ts` own the check port and the
+  immutable registry — a value built at composition, never something to register
+  into.
+- `run-health-checks.server.ts` runs a registry concurrently, bounds each check
+  independently, and cannot fail.
+- `liveness.server.ts` answers `200` with a constant document and reaches no
+  dependency at all, transitively included.
+- `readiness.server.ts` answers `200` or `503` from PostgreSQL plus whichever
+  optional dependencies are switched on; a disabled one is never a fault.
+- `worker-readiness.server.ts` is the worker contract, with its checks injected so
+  this area never imports `@/platform/jobs`.
+
+`GET /api/health/live` and `GET /api/health/ready` are the one exception to
+`defineRoute`, and the exception is exactly two files wide — a probe answers a
+flat document and a `503` that is not an error, and must not resolve a session.
+Web readiness never checks the queue or the worker: a request records work by
+writing an outbox row inside its own transaction.
+
+Implementation rules are documented in [`health/README.md`](./health/README.md)
+and the architectural policy in
+[`docs/architecture/operational-health.md`](../../docs/architecture/operational-health.md).
+
 ## Observability
 
 Structured logging and request correlation are implemented under

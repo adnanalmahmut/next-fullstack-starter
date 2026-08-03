@@ -18,6 +18,7 @@ System-level architectural documentation lives here.
 - [Background Jobs and Transactional Outbox](./background-jobs-and-outbox.md)
 - [Application Audit Platform](./application-audit-platform.md)
 - [Object Storage and Uploads](./object-storage-and-uploads.md)
+- [Operational Health](./operational-health.md)
 - [Design System](../design-system/README.md)
 - [Module Development Guide](../../src/modules/README.md)
 - [Repository Rules](../../AGENT_RULES.md)
@@ -73,6 +74,11 @@ Current documentation covers:
   an immutable staging-to-final promotion, private short-lived downloads, a
   content-inspection extension point, a bounded unscheduled cleanup contract,
   and a removal procedure that touches no business code.
+- Process-aware operational health: a dependency-free liveness probe, a readiness
+  probe over PostgreSQL and whichever optional dependencies are enabled, a worker
+  readiness command with distinct exit codes for "down" and "misconfigured", a
+  closed set of machine codes, independently bounded checks, an immutable
+  registry, and a two-file exception to the Route Handler factory.
 - Semantic design tokens, reusable presentation primitives, and RTL/LTR UI.
 
 Future documentation may cover:

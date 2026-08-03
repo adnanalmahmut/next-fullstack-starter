@@ -351,10 +351,56 @@ POST  /api/v1/admin/users/[userId]/sessions/revoke
 GET   /api/v1/admin/audit
 ```
 
-`/api/auth/[...all]` is the one deployed path outside `/api/v1`; it is owned by
-Better Auth and is never wrapped in the factory. The routes under
-`/api/diagnostics` are development and test instrumentation, answer `404`
-elsewhere, and are not part of the API.
+Three deployed paths sit outside `/api/v1`:
+
+```text
+GET /api/auth/[...all]     provider owned
+GET /api/health/live       operational probe
+GET /api/health/ready      operational probe
+```
+
+`/api/auth/[...all]` is owned by Better Auth and is never wrapped in the factory.
+The routes under `/api/diagnostics` are development and test instrumentation,
+answer `404` elsewhere, and are not part of the API.
+
+## The health exception
+
+The two operational probes are the **only** endpoints in this repository that this
+factory does not build, and the carve-out is deliberately narrow. Four things make
+them a different kind of endpoint:
+
+1. **A different response contract.** They answer a flat document — `{"status":
+…, "code": …}` — rather than `{"data": …}`, because the consumer is a load
+   balancer, a deployment gate, or an alert rule that matches on the document
+   itself.
+2. **A `503` that is not an error.** This factory maps a closed set of error codes
+   onto statuses. Readiness needs a `503` meaning "a dependency is absent", which
+   is not a failure of the request and has no error code.
+3. **No request pipeline.** A probe arrives with no credentials. It must not
+   resolve a session, must not authorize, and must not run rate limiting,
+   idempotency, cache invalidation, or audit.
+4. **Liveness must stay trivial.** Its entire value is that it touches nothing —
+   no database, no Redis, no bucket, not even transitively.
+
+Teaching this factory about health — a `health: true` flag, or a second envelope —
+was rejected: it would place an operational special case inside the boundary every
+business endpoint depends on, and every future reader would have to learn that the
+envelope has an exception.
+
+Instead the health platform owns a narrow adapter of its own,
+`createLivenessHandler` and `createReadinessHandler`, and the exception is bounded
+by three mechanisms rather than by a convention:
+
+- A dependency-cruiser rule refuses any file under `src/app` other than those two
+  route files from importing `src/platform/health`.
+- An ESLint block over `src/app/api/health/**/route.ts` refuses
+  `@/platform/http`, a `try`, a `Response`, and a `.json()`.
+- A contract test enumerates every importer of the health platform and asserts
+  the list.
+
+`defineRoute` is unchanged. No health-specific option was added to it, and every
+other endpoint remains bound by it. The full contract is in
+[`operational-health.md`](./operational-health.md).
 
 The versioning and description strategy is recorded in
 [ADR 1](../adr/0001-versioned-api-and-openapi-strategy.md).

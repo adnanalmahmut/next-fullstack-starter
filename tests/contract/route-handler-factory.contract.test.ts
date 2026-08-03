@@ -45,6 +45,19 @@ const diagnosticRoutes = [
   "src/app/api/diagnostics/request-context/route.ts",
 ];
 
+/**
+ * The two operational probes. They are deployed, unversioned, and deliberately
+ * not built by this factory: a probe answers a flat document rather than the
+ * `{"data": …}` envelope, needs a `503` that is not an error, and must not
+ * resolve a session for a caller that has no credentials. They have their own
+ * narrow adapter, confined to these two files by a dependency-cruiser rule, and
+ * the whole contract is asserted in `operational-health.contract.test.ts`.
+ */
+const healthRoutes = [
+  "src/app/api/health/live/route.ts",
+  "src/app/api/health/ready/route.ts",
+];
+
 function read(filePath: string): string {
   return readFileSync(resolve(projectRoot, filePath), "utf8");
 }
@@ -153,7 +166,12 @@ beforeEach(() => {
 describe("API surface", () => {
   it("has an inventory that is fully accounted for", () => {
     expect(routeFiles).toEqual(
-      [betterAuthRoute, ...diagnosticRoutes, ...versionedRoutes].sort(),
+      [
+        betterAuthRoute,
+        ...diagnosticRoutes,
+        ...healthRoutes,
+        ...versionedRoutes,
+      ].sort(),
     );
   });
 
@@ -171,16 +189,29 @@ describe("API surface", () => {
     expect(existsSync(resolve(projectRoot, "src/app/api/admin"))).toBe(false);
   });
 
-  it("exempts the Better Auth catch-all and nothing else that is deployed", () => {
+  it("accounts for every unversioned route, and exempts nothing else", () => {
     const unversioned = routeFiles.filter(
       (path) => !path.startsWith(versionedPrefix),
     );
 
-    expect(unversioned).toEqual([betterAuthRoute, ...diagnosticRoutes].sort());
+    expect(unversioned).toEqual(
+      [betterAuthRoute, ...diagnosticRoutes, ...healthRoutes].sort(),
+    );
     expect(read(betterAuthRoute)).toContain("toNextJsHandler");
   });
 
-  it("gates every unversioned route that is not provider owned", () => {
+  it("never applies the factory to an operational probe", () => {
+    for (const path of healthRoutes) {
+      const source = stripComments(read(path));
+
+      expect(source, path).not.toContain("defineRoute");
+      expect(readImports(source), path).not.toContain(
+        "@/platform/http/index.server",
+      );
+    }
+  });
+
+  it("gates every diagnostic route behind an environment check", () => {
     for (const path of diagnosticRoutes) {
       const source = read(path);
 

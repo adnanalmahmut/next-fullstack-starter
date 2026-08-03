@@ -248,6 +248,10 @@ describe("driver containment", () => {
       `${jobsRoot}/execution/job-processor.server.ts`,
       `${jobsRoot}/queue/connection.server.ts`,
       `${jobsRoot}/queue/job-queue.server.ts`,
+      // The readiness probe, which takes the `Redis` type only: it builds its
+      // bounded connection through `connection.server.ts` like everything else
+      // here, and closes it in a `finally`.
+      `${jobsRoot}/queue/queue-health.server.ts`,
       `${jobsRoot}/runtime/worker-runtime.server.ts`,
     ]);
   });

@@ -182,13 +182,22 @@ await database.$transaction(async (tx) => {
 that is, only by the separate worker process. The web application keeps recording
 work while Redis and the worker are down.
 
-| Command                      | Purpose                                    |
-| ---------------------------- | ------------------------------------------ |
-| `pnpm jobs:worker`           | Run the worker process.                    |
-| `pnpm jobs:worker:dev`       | Run the worker in watch mode.              |
-| `pnpm jobs:outbox:once`      | Publish one batch, then exit.              |
-| `pnpm jobs:status`           | Report outbox state from PostgreSQL alone. |
-| `pnpm test:jobs:integration` | Run the opt-in jobs integration suite.     |
+| Command                      | Purpose                                         |
+| ---------------------------- | ----------------------------------------------- |
+| `pnpm jobs:worker`           | Run the worker process.                         |
+| `pnpm jobs:worker:dev`       | Run the worker in watch mode.                   |
+| `pnpm jobs:outbox:once`      | Publish one batch, then exit.                   |
+| `pnpm jobs:status`           | Report outbox state from PostgreSQL alone.      |
+| `pnpm jobs:health`           | Report worker readiness, then exit with a code. |
+| `pnpm test:jobs:integration` | Run the opt-in jobs integration suite.          |
+
+`pnpm jobs:health` is the readiness contract for a worker deployment: it checks
+that jobs are enabled, that a queue address is configured, and that PostgreSQL and
+the queue's Redis both answer, then exits `0` when ready, `1` when something is
+down and may recover, and `78` when the process can never start as configured. It
+enqueues nothing, runs no job, opens no port, and closes every connection it
+opened. `pnpm jobs:status` keeps its own meaning: outbox counts from PostgreSQL
+alone, deliberately without contacting Redis.
 
 The worker is a separate process and is never started by `pnpm dev`, `pnpm
 build`, or `pnpm start`. The jobs integration suite is opt-in and is not part of
