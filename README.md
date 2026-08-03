@@ -14,6 +14,8 @@ A production-oriented Next.js starter with TypeScript, internationalized routing
 - next-intl
 - Vitest
 - Playwright
+- OpenTelemetry (optional, disabled by default)
+- Sentry for server-side error monitoring (optional, disabled by default)
 
 ## Requirements
 
@@ -327,6 +329,59 @@ See
 [`docs/architecture/object-storage-and-uploads.md`](docs/architecture/object-storage-and-uploads.md),
 including how to remove object storage from a generated project.
 
+## Optional Production Telemetry
+
+Distributed tracing and metrics over OTLP/HTTP, and server-side error monitoring.
+Both are optional, both are **off by default**, and they are independent of each
+other.
+
+| Command                           | Description                     |
+| --------------------------------- | ------------------------------- |
+| `pnpm test:telemetry:integration` | Run the opt-in telemetry suite. |
+
+With `TELEMETRY_ENABLED=false` no OpenTelemetry SDK module is ever evaluated: there
+is no exporter, no batch queue, no export timer, no DNS lookup, and no socket. With
+`ERROR_MONITORING_ENABLED=false` the Sentry SDK is never loaded and no DSN is held.
+`pnpm verify`, the production build, and `pnpm test:e2e` all pass with no collector,
+no vendor account, and no credential anywhere.
+
+Enable tracing and metrics by setting `TELEMETRY_ENABLED=true` and
+`TELEMETRY_OTLP_ENDPOINT` — the collector's base URL; the `/v1/traces` and
+`/v1/metrics` paths are appended. There is no default endpoint and no localhost
+fallback. Authentication goes in `TELEMETRY_OTLP_HEADERS`, never in the URL.
+
+Enable error monitoring separately with `ERROR_MONITORING_ENABLED=true` and
+`SENTRY_DSN`. Sentry reports unexpected failures only: no tracing, no automatic
+instrumentation, no session replay, no profiling, no client SDK, and no edge SDK.
+Every event is rebuilt from an allowlist, and the exception message is replaced by
+a stable error code before it is sent.
+
+The telemetry integration suite is opt-in and needs no service at all — it starts
+an ephemeral OTLP receiver on a loopback port inside the test process:
+
+```bash
+pnpm test:telemetry:integration
+```
+
+A request, the outbox row it commits, and the job that row produces form one trace,
+and a jobs integration test proves it against real PostgreSQL and Redis. No
+migration was added: the existing `traceparent` and `tracestate` columns are reused.
+
+A span, a metric, and an error report carry identity and an outcome, never content
+— no payload, no output, no actor, no header, no cookie, no object key, no SQL, and
+no error message. Telemetry failure never changes a response, an `ActionResult`, a
+job's retry semantics, or an exit code.
+
+This repository produces signals. It deploys no collector, commits no dashboard,
+and defines no alert rule.
+
+See
+[`docs/architecture/observability.md`](docs/architecture/observability.md),
+including the span and metric catalogs, the attribute allowlists, and how to remove
+telemetry from a generated project, and
+[`docs/adr/0002-server-error-monitoring.md`](docs/adr/0002-server-error-monitoring.md)
+for the error-monitoring decision.
+
 ## Verification
 
 Ensure the test database is running:
@@ -348,6 +403,12 @@ pnpm test:e2e
 ```
 
 The `Verify` CI job provisions PostgreSQL and runs Prisma validation and generation, formatting checks, ESLint, TypeScript checks, test coverage, the production build, and Playwright tests.
+
+Every optional area is disabled for that job — Redis, background jobs, object
+storage, telemetry, and error monitoring — and each has its own opt-in step with
+only the service it needs. That is what makes the default run prove the optionality
+contract rather than assume it. No external secret is used by any step: the
+telemetry step starts its receiver in-process, and no step ever sets a Sentry DSN.
 
 ## Configuration and Secrets
 

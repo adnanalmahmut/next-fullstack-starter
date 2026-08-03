@@ -220,17 +220,21 @@ describe("publishing", () => {
 
     await createOutboxDispatcher({ registry }).runOnce();
 
+    // The envelope carries no trace context here, and that is the correct
+    // behaviour rather than a gap. The stored `traceparent` is restored as the
+    // *parent* of the publish span, and what is injected into the envelope is the
+    // publish span's own context — so the worker's execute span becomes a child of
+    // the publish rather than a second child of the original request. With no SDK
+    // registered there is no publish span and therefore nothing to inject, which
+    // is why the field is absent.
     expect(recordedCalls(add)[0]?.[1]).toEqual({
       jobName: "identity.user-deleted",
       version: 1,
       payload: { userId: "u-1" },
       outboxId: row().id,
       correlationId: "c-1",
-      causationId: "cause-1",
       occurredAt: "2026-08-01T12:00:00.000Z",
-      traceContext: {
-        traceparent: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
-      },
+      causationId: "cause-1",
     });
   });
 

@@ -120,6 +120,15 @@ export {
   type JobsLogEvent,
 } from "./observability/log-event";
 
+/**
+ * The W3C trace-context contract, re-exported.
+ *
+ * It moved to `@/platform/observability` when a second area — the tracing contract
+ * that produces a carrier from the active span — came to need it. It is still
+ * exported here because the outbox columns and the queue envelope are this
+ * platform's, so a caller reasoning about either finds the validators where the
+ * data is.
+ */
 export {
   isValidTraceparent,
   isValidTracestate,
@@ -127,14 +136,20 @@ export {
   sanitizeTraceContext,
   traceContextSchema,
   type TraceContext,
-} from "./observability/trace-context";
+} from "@/platform/observability/trace-context";
 
 export {
-  currentTraceContext,
   JOB_SPAN,
   withJobSpan,
+  type JobSpanAttributes,
   type JobSpanName,
 } from "./observability/tracing";
+
+export {
+  MAX_OUTBOX_BACKLOG_SAMPLE,
+  readOutboxBacklog,
+  startOutboxBacklogMetrics,
+} from "./outbox/outbox-backlog.server";
 
 export {
   MAX_OUTBOX_BACKOFF_MS,

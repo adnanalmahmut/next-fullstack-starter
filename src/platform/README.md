@@ -248,10 +248,13 @@ and the architectural policy in
 
 ## Observability
 
-Structured logging and request correlation are implemented under
-`src/platform/observability`.
+Four independent contracts are implemented under `src/platform/observability`:
+structured logging, tracing, metrics, and server-side error monitoring. The first
+is always on; the other three are optional and off by default.
 
-- `index.server.ts` exposes the controlled server-only API.
+Logging and correlation:
+
+- `index.server.ts` exposes the one controlled server-only API.
 - Pino emits structured JSON with stable base fields and central redaction.
 - `AsyncLocalStorage` scopes typed request context without mutable global
   request bindings.
@@ -259,8 +262,37 @@ Structured logging and request correlation are implemented under
 - Error logging preserves safe application error codes and excludes raw error
   details.
 
+Production telemetry:
+
+- `telemetry/telemetry-sdk.server.ts` is the only file that imports an
+  OpenTelemetry SDK, and it imports one dynamically, inside the enabled branch. So
+  `TELEMETRY_ENABLED=false` means no SDK is evaluated, no provider is registered,
+  no exporter exists, no timer is armed, and no socket is opened.
+- `tracing.server.ts` is the one tracing contract. Every route, action, job,
+  database boundary, and storage operation traces through it and never through an
+  SDK, so a span is a no-op rather than an error on a deployment with no collector.
+- `metrics.server.ts` owns a closed instrument registry and typed recorders. There
+  is no `recordMetric(name, value)` and no recorder takes an open attribute map, so
+  neither a metric name nor a cardinality decision can be made at a call site.
+- `database-span.server.ts` owns a closed registry of the operational database
+  boundaries worth naming. Automatic Prisma instrumentation is deliberately not
+  used: it would produce a span per query, carrying the statement and the bind
+  parameters.
+- `error-monitoring/` is a provider-neutral port with a no-op and a Sentry adapter.
+  Sentry reports unexpected failures only — no tracing, no automatic
+  instrumentation, no replay, no profiling — and every event is rebuilt from an
+  allowlist before it is sent.
+
+A span, a metric, or an error report carries identity and an outcome, never
+content: no payload, no output, no actor, no header, no cookie, no key, no SQL, and
+no error message. Failure is always contained — a tracer, a meter, an exporter, or
+a vendor that throws never changes a response, an `ActionResult`, a job's retry
+semantics, or an exit code.
+
 Architecture and usage rules are documented in
-[`docs/architecture/observability.md`](../../docs/architecture/observability.md).
+[`docs/architecture/observability.md`](../../docs/architecture/observability.md),
+and the error-monitoring decision in
+[`docs/adr/0002-server-error-monitoring.md`](../../docs/adr/0002-server-error-monitoring.md).
 
 ## Proxy
 

@@ -868,6 +868,11 @@ describe("scope", () => {
   });
 
   it("adds no dependency", () => {
+    // An exhaustive snapshot rather than a deny-list, so a dependency added for
+    // any reason has to be acknowledged here. The OpenTelemetry SDK and Sentry
+    // entries below belong to `src/platform/observability`; the assertion that
+    // *this* platform cannot reach them lives in the telemetry contract suite,
+    // which walks the health routes' import graphs.
     const manifest = JSON.parse(read("package.json")) as {
       dependencies: Record<string, string>;
       devDependencies: Record<string, string>;
@@ -880,8 +885,17 @@ describe("scope", () => {
       "@better-auth/prisma-adapter",
       "@next/env",
       "@opentelemetry/api",
+      "@opentelemetry/context-async-hooks",
+      "@opentelemetry/core",
+      "@opentelemetry/exporter-metrics-otlp-http",
+      "@opentelemetry/exporter-trace-otlp-http",
+      "@opentelemetry/resources",
+      "@opentelemetry/sdk-metrics",
+      "@opentelemetry/sdk-trace",
+      "@opentelemetry/semantic-conventions",
       "@prisma/adapter-pg",
       "@prisma/client",
+      "@sentry/node",
       "better-auth",
       "bullmq",
       "class-variance-authority",

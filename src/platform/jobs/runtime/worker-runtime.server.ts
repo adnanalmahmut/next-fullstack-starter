@@ -2,6 +2,8 @@ import "server-only";
 
 import { Worker } from "bullmq";
 
+import type { MetricObserverRegistration } from "@/platform/observability/metrics.server";
+
 import {
   getJobsConfiguration,
   getJobsRedisConfiguration,
@@ -11,6 +13,7 @@ import { createJobProcessor } from "../execution/job-processor.server";
 import { JOB_OUTCOME } from "../observability/job-log-fields";
 import { JOB_LOG_LEVEL, logJobEvent } from "../observability/job-logger.server";
 import { JOBS_LOG_EVENT } from "../observability/log-event";
+import { startOutboxBacklogMetrics } from "../outbox/outbox-backlog.server";
 import {
   createOutboxDispatcher,
   type OutboxDispatcher,
@@ -131,6 +134,10 @@ export async function startJobsWorkerRuntime(
   });
 
   let dispatcher: OutboxDispatcher;
+  // Armed only in the worker, and only when jobs are enabled. A web instance must
+  // never poll the outbox on a timer, which is why this is registered here rather
+  // than anywhere on the request path.
+  let backlogMetrics: MetricObserverRegistration | undefined;
 
   try {
     await worker.waitUntilReady();
@@ -143,7 +150,9 @@ export async function startJobsWorkerRuntime(
     });
 
     dispatcher.start();
+    backlogMetrics = startOutboxBacklogMetrics();
   } catch (error) {
+    backlogMetrics?.unregister();
     // A failed start must not leave a half-open worker and a live connection
     // behind; a supervisor restarting the process would stack them up.
     await worker.close(true).catch(() => undefined);
@@ -166,9 +175,13 @@ export async function startJobsWorkerRuntime(
       queueName: JOBS_QUEUE_NAME,
     });
 
-    // Order matters. Polling stops first so no new message is published while
-    // the worker is draining; then the worker stops accepting and finishes what
-    // it holds; then the connections go.
+    // Order matters. The backlog callback is cancelled first, so no collection
+    // cycle can start against a database connection that is about to close;
+    // polling stops next so no new message is published while the worker is
+    // draining; then the worker stops accepting and finishes what it holds; then
+    // the connections go.
+    backlogMetrics?.unregister();
+
     await dispatcher.stop();
 
     const closedInTime = await settledWithin(

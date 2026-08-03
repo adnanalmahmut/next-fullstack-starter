@@ -1,5 +1,7 @@
 import "server-only";
 
+import { ERROR_BOUNDARY } from "./error-monitoring/error-monitor";
+import { captureUnexpectedError } from "./error-monitoring/error-monitor.server";
 import { LOG_EVENT } from "./log-event";
 import { LOG_STATUS, type RequestContext } from "./log-context";
 import { type StructuredLogger } from "./create-logger.server";
@@ -62,6 +64,20 @@ function reportRequestError(
     }
 
     requestLogger.error(logRecord, LOG_EVENT.REQUEST_FAILED);
+
+    // This boundary owns exactly one class of failure: an error Next.js caught
+    // that no application adapter had already turned into a response. Anything
+    // `defineRoute` or `defineAction` handled never reaches `onRequestError`, so
+    // the same error is never reported twice.
+    //
+    // The route template is passed, never the request path: the template is a
+    // low-cardinality name, and the path carries identifiers and a query string.
+    captureUnexpectedError(error, {
+      boundary: ERROR_BOUNDARY.REQUEST,
+      operationName: context.routePath,
+      errorCode: safeError.errorCode,
+      requestId: requestContext.requestId,
+    });
   });
 }
 

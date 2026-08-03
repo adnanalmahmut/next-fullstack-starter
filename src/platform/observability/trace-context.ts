@@ -1,17 +1,22 @@
 import { z } from "zod";
 
 /**
- * The only tracing metadata this project carries across a queue.
+ * The only tracing metadata this project carries across a process boundary.
  *
  * W3C `traceparent` and `tracestate`, both validated, and nothing else.
  * Baggage is deliberately absent: it is an open key/value bag that travels with
  * a request, so it is the one propagation header most likely to be carrying a
  * user identifier or a tenant name by the time it reaches a durable row.
  *
- * These values live in the outbox and in the envelope, which means they are
+ * These values live in the outbox and in the queue envelope, which means they are
  * written to PostgreSQL and read back by another process. That is exactly why
  * they are bounded here: an unvalidated header would be an unbounded string
  * stored forever.
+ *
+ * The contract lives in the observability platform rather than in the jobs
+ * platform because two areas now depend on it — the tracing contract that
+ * produces a carrier from the active span, and the outbox that stores one — and a
+ * validator owned by the consumer would have to be imported backwards.
  */
 const traceparentPattern =
   /^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/;

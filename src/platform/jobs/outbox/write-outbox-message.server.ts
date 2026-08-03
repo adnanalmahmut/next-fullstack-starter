@@ -3,7 +3,16 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import type { Prisma } from "@/generated/prisma/client";
+import {
+  DATABASE_OPERATION,
+  withDatabaseOperationSpan,
+} from "@/platform/observability/database-span.server";
 import { getRequestContext } from "@/platform/observability/request-context.server";
+import {
+  sanitizeTraceContext,
+  type TraceContext,
+} from "@/platform/observability/trace-context";
+import { currentTraceContext } from "@/platform/observability/tracing.server";
 import {
   DependencyUnavailableError,
   ValidationError,
@@ -18,11 +27,6 @@ import {
 } from "../definitions/job-envelope";
 import { JOB_LOG_LEVEL, logJobEvent } from "../observability/job-logger.server";
 import { JOBS_LOG_EVENT } from "../observability/log-event";
-import {
-  sanitizeTraceContext,
-  type TraceContext,
-} from "../observability/trace-context";
-import { currentTraceContext } from "../observability/tracing";
 
 /**
  * Recording the intent to run a job, inside the transaction that earns it.
@@ -162,27 +166,33 @@ export async function writeOutboxMessage<TPayload, TPayloadInput = TPayload>(
   // response, its own log line, and the causation chain of a follow-up message.
   const outboxId = randomUUID();
 
-  await tx.outboxMessage.create({
-    data: {
-      id: outboxId,
-      jobName: job.name,
-      jobVersion: job.version,
-      payload: parsed.data as Prisma.InputJsonValue,
-      correlationId,
-      ...(input.causationId === undefined
-        ? {}
-        : { causationId: input.causationId }),
-      ...(trace?.traceparent === undefined
-        ? {}
-        : { traceparent: trace.traceparent }),
-      ...(trace?.tracestate === undefined
-        ? {}
-        : { tracestate: trace.tracestate }),
-      ...(input.availableAt === undefined
-        ? {}
-        : { availableAt: input.availableAt }),
-    },
-    select: { id: true },
+  // The insert is the operational boundary worth a span: it is the moment the
+  // intent to run a job becomes durable, inside the caller's transaction. The span
+  // carries the operation name and the outcome and nothing about the row — no job
+  // name, no payload, no identifier.
+  await withDatabaseOperationSpan(DATABASE_OPERATION.OUTBOX_WRITE, async () => {
+    await tx.outboxMessage.create({
+      data: {
+        id: outboxId,
+        jobName: job.name,
+        jobVersion: job.version,
+        payload: parsed.data as Prisma.InputJsonValue,
+        correlationId,
+        ...(input.causationId === undefined
+          ? {}
+          : { causationId: input.causationId }),
+        ...(trace?.traceparent === undefined
+          ? {}
+          : { traceparent: trace.traceparent }),
+        ...(trace?.tracestate === undefined
+          ? {}
+          : { tracestate: trace.tracestate }),
+        ...(input.availableAt === undefined
+          ? {}
+          : { availableAt: input.availableAt }),
+      },
+      select: { id: true },
+    });
   });
 
   // Emitted inside the caller's transaction, which is why it is `debug` and why

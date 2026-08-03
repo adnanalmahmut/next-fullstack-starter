@@ -6,6 +6,10 @@ import {
   StorageUploadIntentStatus as StoredIntentStatus,
 } from "@/generated/prisma/enums";
 import { database } from "@/platform/database/index.server";
+import {
+  DATABASE_OPERATION,
+  withDatabaseOperationSpan,
+} from "@/platform/observability/database-span.server";
 
 import {
   STORAGE_INSPECTION_RESULT,
@@ -231,33 +235,40 @@ export type CreateUploadIntentRow = Readonly<{
 export async function insertUploadIntent(
   input: CreateUploadIntentRow,
 ): Promise<{ object: StoredStorageObject; intent: StoredUploadIntent }> {
-  return database.$transaction(async (tx) => {
-    const object = await tx.storageObject.create({
-      data: {
-        status: StoredObjectStatus.PENDING,
-        objectKey: input.objectKey,
-      },
-      select: OBJECT_SELECTION,
-    });
+  return withDatabaseOperationSpan(
+    DATABASE_OPERATION.STORAGE_UPLOAD_INTENT_CREATE,
+    () =>
+      database.$transaction(async (tx) => {
+        const object = await tx.storageObject.create({
+          data: {
+            status: StoredObjectStatus.PENDING,
+            objectKey: input.objectKey,
+          },
+          select: OBJECT_SELECTION,
+        });
 
-    const intent = await tx.storageUploadIntent.create({
-      data: {
-        objectId: object.id,
-        status: StoredIntentStatus.PENDING,
-        stagingKey: input.stagingKey,
-        finalizeTokenHash: input.finalizeTokenHash,
-        policyName: input.policyName,
-        declaredExtension: input.declaredExtension,
-        expectedContentType: input.expectedContentType,
-        expectedSizeBytes: BigInt(input.expectedSizeBytes),
-        expectedChecksumSha256: input.expectedChecksumSha256,
-        expiresAt: input.expiresAt,
-      },
-      select: INTENT_SELECTION,
-    });
+        const intent = await tx.storageUploadIntent.create({
+          data: {
+            objectId: object.id,
+            status: StoredIntentStatus.PENDING,
+            stagingKey: input.stagingKey,
+            finalizeTokenHash: input.finalizeTokenHash,
+            policyName: input.policyName,
+            declaredExtension: input.declaredExtension,
+            expectedContentType: input.expectedContentType,
+            expectedSizeBytes: BigInt(input.expectedSizeBytes),
+            expectedChecksumSha256: input.expectedChecksumSha256,
+            expiresAt: input.expiresAt,
+          },
+          select: INTENT_SELECTION,
+        });
 
-    return { object: toStoredObject(object), intent: toStoredIntent(intent) };
-  });
+        return {
+          object: toStoredObject(object),
+          intent: toStoredIntent(intent),
+        };
+      }),
+  );
 }
 
 export async function findUploadIntentById(
@@ -301,20 +312,24 @@ export async function claimUploadIntent(input: {
   leaseExpiresAt: Date;
   now: Date;
 }): Promise<StoredUploadIntent | null> {
-  const claimed = await database.storageUploadIntent.updateMany({
-    where: {
-      id: input.intentId,
-      version: input.expectedVersion,
-      status: StoredIntentStatus.PENDING,
-      expiresAt: { gt: input.now },
-    },
-    data: {
-      status: StoredIntentStatus.FINALIZING,
-      finalizeLeaseTokenHash: input.leaseTokenHash,
-      finalizeLeaseExpiresAt: input.leaseExpiresAt,
-      version: { increment: 1 },
-    },
-  });
+  const claimed = await withDatabaseOperationSpan(
+    DATABASE_OPERATION.STORAGE_FINALIZE_CLAIM,
+    () =>
+      database.storageUploadIntent.updateMany({
+        where: {
+          id: input.intentId,
+          version: input.expectedVersion,
+          status: StoredIntentStatus.PENDING,
+          expiresAt: { gt: input.now },
+        },
+        data: {
+          status: StoredIntentStatus.FINALIZING,
+          finalizeLeaseTokenHash: input.leaseTokenHash,
+          finalizeLeaseExpiresAt: input.leaseExpiresAt,
+          version: { increment: 1 },
+        },
+      }),
+  );
 
   if (claimed.count === 0) {
     return null;
@@ -338,20 +353,24 @@ export async function reclaimUploadIntent(input: {
   leaseExpiresAt: Date;
   now: Date;
 }): Promise<StoredUploadIntent | null> {
-  const claimed = await database.storageUploadIntent.updateMany({
-    where: {
-      id: input.intentId,
-      version: input.expectedVersion,
-      status: StoredIntentStatus.FINALIZING,
-      finalizeLeaseExpiresAt: { lt: input.now },
-      expiresAt: { gt: input.now },
-    },
-    data: {
-      finalizeLeaseTokenHash: input.leaseTokenHash,
-      finalizeLeaseExpiresAt: input.leaseExpiresAt,
-      version: { increment: 1 },
-    },
-  });
+  const claimed = await withDatabaseOperationSpan(
+    DATABASE_OPERATION.STORAGE_FINALIZE_CLAIM,
+    () =>
+      database.storageUploadIntent.updateMany({
+        where: {
+          id: input.intentId,
+          version: input.expectedVersion,
+          status: StoredIntentStatus.FINALIZING,
+          finalizeLeaseExpiresAt: { lt: input.now },
+          expiresAt: { gt: input.now },
+        },
+        data: {
+          finalizeLeaseTokenHash: input.leaseTokenHash,
+          finalizeLeaseExpiresAt: input.leaseExpiresAt,
+          version: { increment: 1 },
+        },
+      }),
+  );
 
   if (claimed.count === 0) {
     return null;
@@ -387,51 +406,58 @@ export async function completeUploadIntent(input: {
   object: StoredStorageObject;
   intent: StoredUploadIntent;
 } | null> {
-  return database.$transaction(async (tx) => {
-    const updated = await tx.storageUploadIntent.updateMany({
-      where: {
-        id: input.intentId,
-        version: input.expectedVersion,
-        status: StoredIntentStatus.FINALIZING,
-        finalizeLeaseTokenHash: input.leaseTokenHash,
-      },
-      data: {
-        status: StoredIntentStatus.FINALIZED,
-        finalizedAt: input.now,
-        finalizeLeaseTokenHash: null,
-        finalizeLeaseExpiresAt: null,
-        version: { increment: 1 },
-      },
-    });
+  return withDatabaseOperationSpan(
+    DATABASE_OPERATION.STORAGE_FINALIZE_COMMIT,
+    () =>
+      database.$transaction(async (tx) => {
+        const updated = await tx.storageUploadIntent.updateMany({
+          where: {
+            id: input.intentId,
+            version: input.expectedVersion,
+            status: StoredIntentStatus.FINALIZING,
+            finalizeLeaseTokenHash: input.leaseTokenHash,
+          },
+          data: {
+            status: StoredIntentStatus.FINALIZED,
+            finalizedAt: input.now,
+            finalizeLeaseTokenHash: null,
+            finalizeLeaseExpiresAt: null,
+            version: { increment: 1 },
+          },
+        });
 
-    if (updated.count === 0) {
-      return null;
-    }
+        if (updated.count === 0) {
+          return null;
+        }
 
-    await tx.storageObject.update({
-      where: { id: input.objectId },
-      data: {
-        status: StoredObjectStatus.READY,
-        contentType: input.contentType,
-        sizeBytes: BigInt(input.sizeBytes),
-        checksumSha256: input.checksumSha256,
-        etag: input.etag,
-        inspectionResult: STORED_INSPECTION_RESULT[input.inspection],
-        readyAt: input.now,
-      },
-    });
+        await tx.storageObject.update({
+          where: { id: input.objectId },
+          data: {
+            status: StoredObjectStatus.READY,
+            contentType: input.contentType,
+            sizeBytes: BigInt(input.sizeBytes),
+            checksumSha256: input.checksumSha256,
+            etag: input.etag,
+            inspectionResult: STORED_INSPECTION_RESULT[input.inspection],
+            readyAt: input.now,
+          },
+        });
 
-    const object = await tx.storageObject.findUniqueOrThrow({
-      where: { id: input.objectId },
-      select: OBJECT_SELECTION,
-    });
-    const intent = await tx.storageUploadIntent.findUniqueOrThrow({
-      where: { id: input.intentId },
-      select: INTENT_SELECTION,
-    });
+        const object = await tx.storageObject.findUniqueOrThrow({
+          where: { id: input.objectId },
+          select: OBJECT_SELECTION,
+        });
+        const intent = await tx.storageUploadIntent.findUniqueOrThrow({
+          where: { id: input.intentId },
+          select: INTENT_SELECTION,
+        });
 
-    return { object: toStoredObject(object), intent: toStoredIntent(intent) };
-  });
+        return {
+          object: toStoredObject(object),
+          intent: toStoredIntent(intent),
+        };
+      }),
+  );
 }
 
 /**
@@ -592,21 +618,25 @@ export async function claimCleanupCandidate(input: {
   expectedStatus: UploadIntentStatus;
   now: Date;
 }): Promise<boolean> {
-  const claimed = await database.storageUploadIntent.updateMany({
-    where: {
-      id: input.intentId,
-      version: input.expectedVersion,
-      status: STORED_INTENT_STATUS[input.expectedStatus],
-      expiresAt: { lt: input.now },
-    },
-    data: {
-      status: StoredIntentStatus.EXPIRED,
-      failureReason: "expired",
-      finalizeLeaseTokenHash: null,
-      finalizeLeaseExpiresAt: null,
-      version: { increment: 1 },
-    },
-  });
+  const claimed = await withDatabaseOperationSpan(
+    DATABASE_OPERATION.STORAGE_CLEANUP_CLAIM,
+    () =>
+      database.storageUploadIntent.updateMany({
+        where: {
+          id: input.intentId,
+          version: input.expectedVersion,
+          status: STORED_INTENT_STATUS[input.expectedStatus],
+          expiresAt: { lt: input.now },
+        },
+        data: {
+          status: StoredIntentStatus.EXPIRED,
+          failureReason: "expired",
+          finalizeLeaseTokenHash: null,
+          finalizeLeaseExpiresAt: null,
+          version: { increment: 1 },
+        },
+      }),
+  );
 
   return claimed.count > 0;
 }
